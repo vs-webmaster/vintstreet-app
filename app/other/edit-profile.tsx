@@ -1,8 +1,9 @@
-import { storageService } from '@/api';
+import { storageService } from '@/api/services';
 import { InputComponent } from '@/components/common/input';
 import { useAuth } from '@/hooks/use-auth';
 import { updateProfile as updateProfileAction } from '@/store/slices/authSlice';
 import { styles } from '@/styles';
+import { logger } from '@/utils/logger';
 import { showToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -141,7 +142,7 @@ export default function EditProfileScreen() {
           finalAvatarUrl = uploadResult.url;
           showToast('Avatar uploaded successfully!', 'success');
         } else {
-          console.error('Avatar upload failed:', uploadResult.error);
+          logger.error('Avatar upload failed:', uploadResult.error);
           Alert.alert('Upload Failed', uploadResult.error || 'Failed to upload avatar. Please try again.');
           setLoading(false);
           return;
@@ -165,18 +166,18 @@ export default function EditProfileScreen() {
       } else if (result && updateProfileAction.rejected.match(result)) {
         // Show specific error if available
         const errorMessage = result.error?.message || 'Failed to update profile.';
-        console.error('Profile update error:', errorMessage);
-        console.error('Full error:', result.error);
+        logger.error('Profile update error:', errorMessage);
+        logger.error('Full error:', result.error);
         Alert.alert('Update Failed', errorMessage);
         showToast(errorMessage, 'danger');
       } else {
-        console.error('Unexpected result:', result);
-        console.error('Result details:', JSON.stringify(result));
+        logger.error('Unexpected result:', result);
+        logger.error('Result details:', JSON.stringify(result));
         Alert.alert('Update Failed', 'An unexpected error occurred. Check console for details.');
         showToast('Failed to update profile.', 'danger');
       }
     } catch (error) {
-      console.error('Profile update exception:', error);
+      logger.error('Profile update exception:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to update profile.';
       Alert.alert('Error', errorMessage);
       showToast(errorMessage, 'danger');
@@ -320,8 +321,8 @@ export default function EditProfileScreen() {
         animationType="fade"
         onRequestClose={() => setShowPhotoOptions(false)}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-2xl">
+        <View className="flex-1 justify-end bg-black/50">
+          <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
             <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
               <Text className="text-xl font-inter-bold text-black">Change Photo</Text>
               <TouchableOpacity onPress={() => setShowPhotoOptions(false)} hitSlop={8}>
@@ -360,7 +361,7 @@ export default function EditProfileScreen() {
                 <Feather name="chevron-right" size={20} color="#9CA3AF" />
               </Pressable>
             </View>
-          </View>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>

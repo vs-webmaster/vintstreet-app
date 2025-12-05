@@ -1,7 +1,9 @@
-import { CreateStreamData, storageService, streamsService } from '@/api';
+import { storageService, streamsService } from '@/api/services';
+import { CreateStreamData } from '@/api/types';
 import { DropdownComponent, InputComponent } from '@/components/common';
 import { useAuth } from '@/hooks/use-auth';
 import { styles } from '@/styles';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -101,7 +103,7 @@ export default function ScheduleStreamScreen() {
         setThumbnail(stream.thumbnail || '');
       }
     } catch (error) {
-      console.error('Error loading stream:', error);
+      logger.error('Error loading stream:', error);
       showErrorToast('Failed to load stream');
     } finally {
       setIsLoading(false);
@@ -155,14 +157,14 @@ export default function ScheduleStreamScreen() {
 
       router.back();
     } catch (error) {
-      console.error('Error saving stream:', error);
+      logger.error('Error saving stream:', error);
       showErrorToast(isEditMode ? 'Failed to update stream' : 'Failed to schedule stream');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const onDateChange = (_event: any, selectedDate?: Date) => {
+  const onDateChange = (_event: unknown, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       const newDate = new Date(startTime);
@@ -173,7 +175,7 @@ export default function ScheduleStreamScreen() {
     }
   };
 
-  const onTimeChange = (_event: any, selectedTime?: Date) => {
+  const onTimeChange = (_event: unknown, selectedTime?: Date) => {
     setShowTimePicker(false);
     if (selectedTime) {
       const newDate = new Date(startTime);
@@ -240,7 +242,7 @@ export default function ScheduleStreamScreen() {
         await uploadThumbnail(asset.uri);
       }
     } catch (error) {
-      console.error('Error picking image:', error);
+      logger.error('Error picking image:', error);
       showErrorToast('Failed to pick image from gallery. Please try again.');
     }
   };
@@ -275,7 +277,7 @@ export default function ScheduleStreamScreen() {
         await uploadThumbnail(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
+      logger.error('Error taking photo:', error);
       showErrorToast('Failed to take photo. Please try again.');
     }
   };
@@ -310,7 +312,7 @@ export default function ScheduleStreamScreen() {
         showErrorToast(result.error || 'Failed to upload thumbnail');
       }
     } catch (error) {
-      console.error('Error uploading thumbnail:', error);
+      logger.error('Error uploading thumbnail:', error);
       showErrorToast('Failed to upload thumbnail. Please check your internet connection and try again.');
     } finally {
       setIsUploadingThumbnail(false);
@@ -343,7 +345,7 @@ export default function ScheduleStreamScreen() {
 
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#000" />
-          <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading...</Text>
+          <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading...</Text>
         </View>
       </SafeAreaView>
     );
@@ -614,16 +616,13 @@ export default function ScheduleStreamScreen() {
         animationType="slide"
         onRequestClose={() => setShowImagePickerModal(false)}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="rounded-t-2xl bg-white">
+        <View className="flex-1 justify-end bg-black/50">
+          <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
             {/* Header */}
             <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
               <Text className="text-lg font-inter-bold text-black">Add Stream Thumbnail</Text>
-              <TouchableOpacity
-                onPress={() => setShowImagePickerModal(false)}
-                className="items-center justify-center w-6 h-6"
-              >
-                <Feather name="x" size={20} color="#000" />
+              <TouchableOpacity onPress={() => setShowImagePickerModal(false)} hitSlop={8}>
+                <Feather name="x" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
@@ -668,7 +667,7 @@ export default function ScheduleStreamScreen() {
                 <Feather name="chevron-right" size={20} color="#999" />
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>

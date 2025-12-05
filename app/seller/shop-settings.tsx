@@ -1,7 +1,8 @@
-import { authService, sellerService } from '@/api';
+import { authService, sellerService } from '@/api/services';
 import { InputComponent } from '@/components/common/input';
 import { useAuth } from '@/hooks/use-auth';
 import { styles } from '@/styles';
+import { logger } from '@/utils/logger';
 import { showToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -14,7 +15,7 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -88,7 +89,7 @@ export default function ShopSettingsScreen() {
         setReturnPolicy(sellerProfile.return_policy || '');
       }
     } catch (error) {
-      console.error('Error loading shop settings:', error);
+      logger.error('Error loading shop settings:', error);
     } finally {
       setIsLoading(false);
     }
@@ -151,7 +152,7 @@ export default function ShopSettingsScreen() {
       showToast('Shop settings saved successfully!', 'success');
       router.replace('/account');
     } catch (error) {
-      console.error('Error saving shop settings:', error);
+      logger.error('Error saving shop settings:', error);
       showToast(error instanceof Error ? error.message : 'Failed to save shop settings', 'danger');
     } finally {
       setLoading(false);
@@ -177,7 +178,7 @@ export default function ShopSettingsScreen() {
 
         <View className="flex-1 items-center justify-center p-4">
           <ActivityIndicator size="large" color="#000" />
-          <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading your shop settings...</Text>
+          <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading your shop settings...</Text>
         </View>
       </SafeAreaView>
     );

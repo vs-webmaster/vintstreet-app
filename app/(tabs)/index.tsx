@@ -1,19 +1,36 @@
-import { listingsService, Product } from '@/api';
+import { listingsService } from '@/api/services';
+import { Product } from '@/api/types';
 import Brand from '@/components/brand';
 import { MegaMenuNav } from '@/components/mega-menu-nav';
 import ProductCard from '@/components/product-card';
 import QuickLinks from '@/components/quick-links';
 import SearchBar from '@/components/search-bar';
+import ShopBannerCarousel from '@/components/shop-banner-carousel';
 import TopCategory from '@/components/top-category';
+import { styles } from '@/styles';
+import { logger } from '@/utils/logger';
+import { getStorageJSON } from '@/utils/storage';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const PRODUCTS_PER_PAGE = 10;
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function HomeScreen() {
+  const PRODUCTS_PER_PAGE = 10;
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +39,10 @@ export default function HomeScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [pageInput, setPageInput] = useState('1');
+  const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
+  const [isLoadingRecommended, setIsLoadingRecommended] = useState(false);
+  const [recentlyViewedProducts, setRecentlyViewedProducts] = useState<Product[]>([]);
+  const [isLoadingRecentlyViewed, setIsLoadingRecentlyViewed] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -33,6 +54,13 @@ export default function HomeScreen() {
       fetchProducts();
     }
   }, [searchKeyword]);
+
+  // Refresh recently viewed and recommended products when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchRecommendedProducts();
+    }, [])
+  );
 
   const fetchProducts = async (keyword?: string) => {
     try {
@@ -58,7 +86,7 @@ export default function HomeScreen() {
         }
       }
     } catch (err) {
-      console.error('Error loading products:', err);
+      logger.error('Error loading products:', err);
       setProducts([]);
       setError(err instanceof Error ? err.message : 'Failed to load products');
     } finally {
@@ -66,23 +94,23 @@ export default function HomeScreen() {
     }
   };
 
-  const handleSearch = (keyword?: string) => {
-    setCurrentPage(1);
-    fetchProducts(keyword);
-  };
-
   const onRefresh = async () => {
     try {
       setRefreshing(true);
       setCurrentPage(1);
       setError(null);
-      await fetchProducts();
+      await Promise.all([fetchProducts(), fetchRecommendedProducts()]);
     } catch (err) {
-      console.error('Error refreshing:', err);
+      logger.error('Error refreshing:', err);
       setError(err instanceof Error ? err.message : 'Failed to refresh products');
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleSearch = (keyword?: string) => {
+    setCurrentPage(1);
+    fetchProducts(keyword);
   };
 
   const goToNextPage = () => {
@@ -113,6 +141,42 @@ export default function HomeScreen() {
     }
   };
 
+  const fetchRecommendedProducts = async () => {
+    try {
+      setIsLoadingRecentlyViewed(true);
+      setIsLoadingRecommended(true);
+
+      // Get recently viewed products from AsyncStorage
+      const recentlyViewedIds = await getStorageJSON('RECENTLY_VIEWED_PRODUCTS');
+      if (!recentlyViewedIds || !Array.isArray(recentlyViewedIds) || recentlyViewedIds.length === 0) {
+        setRecentlyViewedProducts([]);
+        setRecommendedProducts([]);
+        return;
+      }
+
+      // Fetch recently viewed products by their IDs
+      const recentlyViewedIdsSlice = recentlyViewedIds.slice(0, 4);
+      const recentlyViewed = await listingsService.getProductsByIds(recentlyViewedIdsSlice);
+      setRecentlyViewedProducts(recentlyViewed);
+
+      if (recentlyViewed.length === 0) {
+        setRecommendedProducts([]);
+        return;
+      }
+
+      // Fetch recommended products based on recently viewed
+      const recommended = await listingsService.getRecommendedProducts(recentlyViewed, 8);
+      setRecommendedProducts(recommended);
+    } catch (err) {
+      logger.error('Error loading recommended products:', err);
+      setRecentlyViewedProducts([]);
+      setRecommendedProducts([]);
+    } finally {
+      setIsLoadingRecentlyViewed(false);
+      setIsLoadingRecommended(false);
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 mb-14 bg-white">
       {/* Search Bar */}
@@ -121,113 +185,170 @@ export default function HomeScreen() {
       {/* Mega Menu Navigation */}
       <MegaMenuNav />
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={{ flexGrow: 1 }}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        style={styles.container}
       >
-        <View className="flex-1 gap-6 py-4">
-          {/* Quick Links Section */}
-          <View className="px-2">
-            <Text className="text-sm font-inter-bold text-black mb-3">QUICK LINKS</Text>
-            <QuickLinks />
-          </View>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={{ flexGrow: 1 }}
+        >
+          <View className="flex-1 gap-6 py-4">
+            {/* Shop Banner Carousel */}
+            <ShopBannerCarousel />
 
-          {/* Top Categories Section */}
-          <View className="px-2">
-            <Text className="text-sm font-inter-bold text-black mb-3">TOP CATEGORIES</Text>
-            <TopCategory />
-          </View>
+            {/* Quick Links Section */}
+            <View className="gap-2 px-2">
+              <Text className="text-sm font-inter-bold text-black">QUICK LINKS</Text>
+              <QuickLinks />
+            </View>
 
-          {/* Brands Section */}
-          <View className="px-2">
-            <Text className="text-sm font-inter-bold text-black mb-3">BRANDS YOU MAY LIKE</Text>
-            <Brand />
-          </View>
+            {/* Top Categories Section */}
+            <View className="gap-2 px-2">
+              <Text className="text-sm font-inter-bold text-black">TOP CATEGORIES</Text>
+              <TopCategory />
+            </View>
 
-          {/* All Listings Section */}
-          <View className="px-2">
-            <Text className="text-sm font-inter-bold text-black mb-3">ALL LISTINGS</Text>
+            {/* Brands Section */}
+            <View className="gap-2 px-2">
+              <Text className="text-sm font-inter-bold text-black">BRANDS YOU MAY LIKE</Text>
+              <Brand />
+            </View>
 
-            {isLoading ? (
-              <View className="flex-1 items-center justify-center p-4">
-                <ActivityIndicator size="large" color="#000" />
-                <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading products...</Text>
-              </View>
-            ) : error ? (
-              <View className="flex-1 items-center justify-center p-4">
-                <Feather name="alert-circle" color="#ff4444" size={64} />
-                <Text className="my-4 text-lg font-inter-bold text-red-500">Error loading products</Text>
-                <TouchableOpacity onPress={() => fetchProducts()} className="px-6 py-3 rounded-lg bg-black">
-                  <Text className="text-base font-inter-bold text-white">Retry</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View className="flex-row flex-wrap justify-between gap-2">
-                {products.length > 0 ? (
-                  products.map((item) => (
-                    <ProductCard key={item.id} product={item} onPress={() => router.push(`/product/${item.id}`)} />
-                  ))
-                ) : (
-                  <View className="flex-1 items-center justify-center p-4">
-                    <Feather name="shopping-bag" color="#999" size={64} />
-                    <Text className="mt-4 mb-2 text-lg font-inter-bold text-gray-900">No products found</Text>
-                    <TouchableOpacity onPress={() => fetchProducts()} className="bg-black rounded-lg py-3 px-6">
-                      <Text className="text-base font-inter-bold text-white">Retry</Text>
-                    </TouchableOpacity>
+            {/* Recently Viewed Products Section */}
+            {recentlyViewedProducts.length > 0 && (
+              <View className="gap-2 px-2">
+                <Text className="text-sm font-inter-bold text-black">RECENTLY VIEWED</Text>
+                {isLoadingRecentlyViewed ? (
+                  <View className="flex-row items-center justify-center py-4">
+                    <ActivityIndicator size="small" color="#000" />
+                    <Text className="ml-2 text-sm font-inter-medium text-gray-600">Loading recently viewed...</Text>
                   </View>
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View className="flex-row gap-2">
+                      {recentlyViewedProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onPress={() => router.push(`/product/${product.id}`)}
+                          width={(screenWidth / 5) * 2}
+                        />
+                      ))}
+                    </View>
+                  </ScrollView>
                 )}
               </View>
             )}
 
-            {/* Pagination Controls - Always visible */}
-            {totalPages > 1 && (
-              <View className="mt-4">
-                {/* Pagination Buttons */}
-                <View className="flex-row items-center justify-center gap-3">
-                  {/* Prev Arrow */}
-                  <TouchableOpacity
-                    onPress={goToPrevPage}
-                    disabled={currentPage === 1 || isLoading}
-                    className="px-4 py-2"
-                  >
-                    <Text className={`${currentPage === 1 || isLoading ? 'text-gray-400' : 'text-black'}`}>
-                      <Feather name="chevron-left" size={24} color="black" />
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Current Page Input / Total Pages */}
-                  <View className="flex-row items-center gap-2">
-                    <TextInput
-                      value={pageInput}
-                      onChangeText={handlePageInputChange}
-                      onSubmitEditing={handlePageInputSubmit}
-                      onBlur={handlePageInputSubmit}
-                      keyboardType="number-pad"
-                      returnKeyType="done"
-                      editable={!isLoading}
-                      className="bg-white border border-gray-300 rounded-lg px-4 py-2 text-center text-base font-inter-medium text-black min-w-[50px]"
-                    />
-                    <Text className="text-base font-inter-medium text-gray-600">/</Text>
-                    <Text className="text-base font-inter-medium text-black">{totalPages}</Text>
+            {/* Recommended Products Section */}
+            {recommendedProducts.length > 0 && (
+              <View className="gap-2 px-2">
+                <Text className="text-sm font-inter-bold text-black">WE THINK YOU'LL LIKE</Text>
+                {isLoadingRecommended ? (
+                  <View className="flex-row items-center justify-center py-4">
+                    <ActivityIndicator size="small" color="#000" />
+                    <Text className="ml-2 text-sm font-inter-medium text-gray-600">Loading recommendations...</Text>
                   </View>
-
-                  {/* Next Arrow */}
-                  <TouchableOpacity
-                    onPress={goToNextPage}
-                    disabled={currentPage === totalPages || isLoading}
-                    className="px-4 py-2"
-                  >
-                    <Text className={`${currentPage === totalPages || isLoading ? 'text-gray-400' : 'text-black'}`}>
-                      <Feather name="chevron-right" size={24} color="black" />
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View className="flex-row gap-2">
+                      {recommendedProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onPress={() => router.push(`/product/${product.id}`)}
+                          width={(screenWidth / 5) * 2}
+                        />
+                      ))}
+                    </View>
+                  </ScrollView>
+                )}
               </View>
             )}
+
+            {/* All Listings Section */}
+            <View className="gap-2 px-2">
+              <Text className="text-sm font-inter-bold text-black">ALL LISTINGS</Text>
+
+              {isLoading ? (
+                <View className="flex-1 items-center justify-center p-2">
+                  <ActivityIndicator size="large" color="#000" />
+                  <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading products...</Text>
+                </View>
+              ) : error ? (
+                <View className="flex-1 items-center justify-center p-2">
+                  <Feather name="alert-circle" color="#ff4444" size={64} />
+                  <Text className="mt-2 mb-4 text-lg font-inter-bold text-red-500">Error loading products</Text>
+                  <TouchableOpacity onPress={() => fetchProducts()} className="px-6 py-3 rounded-lg bg-black">
+                    <Text className="text-base font-inter-bold text-white">Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View className="flex-row flex-wrap justify-between gap-2">
+                  {products.length > 0 ? (
+                    products.map((item) => (
+                      <ProductCard key={item.id} product={item} onPress={() => router.push(`/product/${item.id}`)} />
+                    ))
+                  ) : (
+                    <View className="flex-1 items-center justify-center p-2">
+                      <Feather name="shopping-bag" color="#999" size={64} />
+                      <Text className="mt-2 mb-4 text-lg font-inter-bold text-gray-900">No products found</Text>
+                      <TouchableOpacity onPress={() => fetchProducts()} className="px-6 py-3 rounded-lg bg-black">
+                        <Text className="text-base font-inter-bold text-white">Retry</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {totalPages > 1 && (
+                <View className="mt-4">
+                  <View className="flex-row items-center justify-center gap-2">
+                    <TouchableOpacity
+                      onPress={goToPrevPage}
+                      disabled={currentPage === 1 || isLoading}
+                      className="px-4 py-2"
+                    >
+                      <Text className={`${currentPage === 1 || isLoading ? 'text-gray-400' : 'text-black'}`}>
+                        <Feather name="chevron-left" size={24} />
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View className="flex-row items-center gap-2">
+                      <TextInput
+                        value={pageInput}
+                        onChangeText={handlePageInputChange}
+                        onSubmitEditing={handlePageInputSubmit}
+                        onBlur={handlePageInputSubmit}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        editable={!isLoading}
+                        className="min-w-[50px] px-4 py-2 rounded-lg text-center text-base font-inter-medium text-black bg-white border border-gray-300"
+                      />
+                      <Text className="text-base font-inter-medium text-gray-600">/</Text>
+                      <Text className="text-base font-inter-medium text-black">{totalPages}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={goToNextPage}
+                      disabled={currentPage === totalPages || isLoading}
+                      className="px-4 py-2"
+                    >
+                      <Text className={`${currentPage === totalPages || isLoading ? 'text-gray-400' : 'text-black'}`}>
+                        <Feather name="chevron-right" size={24} />
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

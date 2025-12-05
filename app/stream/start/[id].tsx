@@ -1,9 +1,11 @@
-import { Stream, streamsService } from '@/api';
-import { supabase } from '@/api/config/supabase';
+import { supabase } from '@/api/config';
+import { listingsService, ordersService, streamsService } from '@/api/services';
+import { Stream } from '@/api/types';
 import LiveChat from '@/components/live-chat';
 import { useAgora } from '@/hooks/use-agora';
 import { useAuth } from '@/hooks/use-auth';
 import { styles } from '@/styles';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -116,14 +118,6 @@ export default function StartStreamScreen() {
     isHost: true,
   });
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!user) {
-      router.replace('/(auth)' as any);
-      return;
-    }
-  }, [user]);
-
   // Load stream data
   useEffect(() => {
     if (id) {
@@ -151,7 +145,7 @@ export default function StartStreamScreen() {
 
       setStream(data);
     } catch (error) {
-      console.error('Error loading stream:', error);
+      logger.error('Error loading stream:', error);
       showErrorToast('Failed to load stream');
       router.back();
     } finally {
@@ -165,38 +159,10 @@ export default function StartStreamScreen() {
       if (!user) return;
 
       try {
-        const { data: orders, error: ordersError } = await supabase
-          .from('orders')
-          .select('id, order_amount, created_at, listing_id')
-          .eq('stream_id', currentStreamId)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (ordersError) throw ordersError;
-
-        if (orders && orders.length > 0) {
-          const listingIds = orders.map((order: any) => order.listing_id).filter(Boolean);
-          const { data: listings, error: listingsError } = await supabase
-            .from('listings')
-            .select('id, product_name')
-            .in('id', listingIds);
-
-          if (listingsError) throw listingsError;
-
-          const salesData = orders.map((order: any, index: number) => {
-            const listing = (listings as any)?.find((l: any) => l.id === order.listing_id);
-            return {
-              id: order.id,
-              itemName: listing?.product_name || `Item ${index + 1}`,
-              price: Number(order.order_amount),
-              soldAt: new Date(order.created_at),
-            };
-          });
-          setRecentSales(salesData);
-        }
+        const salesData = await ordersService.getRecentSalesForStream(currentStreamId, 10);
+        setRecentSales(salesData);
       } catch (error) {
-        console.error('Error fetching recent sales:', error);
+        logger.error('Error fetching recent sales:', error);
       }
     };
 
@@ -255,15 +221,7 @@ export default function StartStreamScreen() {
     if (!activeListing) return;
 
     try {
-      const { error } = await supabase
-        .from('listings')
-        .update({
-          is_active: false,
-          auction_end_time: null,
-        })
-        .eq('id', activeListing);
-
-      if (error) throw error;
+      await listingsService.endAuction(activeListing);
 
       setIsAuctionActive(false);
       setAuctionEndTime(null);
@@ -271,7 +229,7 @@ export default function StartStreamScreen() {
 
       showSuccessToast('Auction ended successfully');
     } catch (error) {
-      console.error('Error ending auction:', error);
+      logger.error('Error ending auction:', error);
       showErrorToast('Failed to end auction');
     }
   };
@@ -294,7 +252,7 @@ export default function StartStreamScreen() {
 
       showSuccessToast('Stream started! You are now LIVE');
     } catch (error) {
-      console.error('Error starting stream:', error);
+      logger.error('Error starting stream:', error);
       showErrorToast('Failed to start stream. Please check your camera and microphone permissions');
     }
   };
@@ -316,7 +274,7 @@ export default function StartStreamScreen() {
             showSuccessToast('Stream ended successfully');
             router.back();
           } catch (error) {
-            console.error('Error stopping stream:', error);
+            logger.error('Error stopping stream:', error);
             showErrorToast('Failed to stop stream');
           }
         },
@@ -367,30 +325,23 @@ export default function StartStreamScreen() {
 
     try {
       const endTime = new Date(Date.now() + auctionDuration * 1000);
-      const { data, error } = await supabase
-        .from('listings')
-        .insert({
-          seller_id: user.id,
-          stream_id: currentStreamId,
-          product_name: 'Auction Item',
-          product_description: 'Live auction item from stream',
-          starting_price: parseFloat(auctionPrice),
-          current_bid: parseFloat(auctionPrice),
-          is_active: true,
-          auction_end_time: endTime.toISOString(),
-        })
-        .select()
-        .single();
+      const data = await listingsService.createAuctionListing({
+        seller_id: user.id,
+        stream_id: currentStreamId,
+        product_name: 'Auction Item',
+        product_description: 'Live auction item from stream',
+        starting_price: parseFloat(auctionPrice),
+        current_bid: parseFloat(auctionPrice),
+        auction_end_time: endTime.toISOString(),
+      });
 
-      if (error) throw error;
-
-      setActiveListing((data as any)?.id);
+      setActiveListing((data as unknown)?.id);
       setIsAuctionActive(true);
       setAuctionEndTime(endTime);
 
       showSuccessToast(`Auction started! ${auctionDuration}-second auction is now live`);
     } catch (error) {
-      console.error('Error starting auction:', error);
+      logger.error('Error starting auction:', error);
       showErrorToast('Failed to start auction');
     }
   };
@@ -482,7 +433,7 @@ export default function StartStreamScreen() {
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 items-center justify-center p-4">
           <ActivityIndicator size="large" color="#000" />
-          <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading...</Text>
+          <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading...</Text>
         </View>
       </SafeAreaView>
     );
@@ -500,12 +451,8 @@ export default function StartStreamScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-        style={styles.container}
-      >
-        {/* Full Screen Video Container */}
+      {/* Full Screen Video Container */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
         <View className="flex-1 bg-white relative">
           {/* Video Player - Full Screen */}
           <View className="absolute inset-0 w-full h-full">
@@ -578,38 +525,36 @@ export default function StartStreamScreen() {
 
           {/* Top Overlay - Live Indicator & Viewers */}
           <View className="absolute top-0 left-0 right-0">
-            <SafeAreaView edges={['top']}>
-              <View className="flex-row items-center justify-between gap-2 px-5 py-4">
-                <View className="flex-row items-center gap-2">
-                  {isLive && (
-                    <View className="flex-row items-center gap-2 px-4 py-2 rounded-full bg-red-500 border border-red-500">
-                      <View className="w-2.5 h-2.5 rounded-full bg-white" />
-                      <Text className="text-sm font-inter-bold text-white tracking-wider uppercase">LIVE</Text>
-                    </View>
-                  )}
-                  {isLive && (
-                    <View className="flex-row items-center gap-2 px-4 py-2 rounded-full bg-black/20 border border-black/30">
-                      <Feather name="users" size={16} color="#fff" />
-                      <Text className="text-sm font-inter-semibold text-white">{viewerCount}</Text>
-                    </View>
-                  )}
-                </View>
-                <View className="flex-row items-center gap-2">
-                  <TouchableOpacity
-                    onPress={handleShareStream}
-                    className="p-3 rounded-xl shadow-xl bg-gray-100 border border-gray-200 active:bg-gray-200"
-                  >
-                    <Feather name="share-2" size={16} color="#000" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setShowControls(!showControls)}
-                    className="p-3 rounded-xl shadow-xl bg-gray-100 border border-gray-200 active:bg-gray-200"
-                  >
-                    <Feather name="settings" size={16} color="#000" />
-                  </TouchableOpacity>
-                </View>
+            <View className="flex-row items-center justify-between gap-2 p-4">
+              <View className="flex-row items-center gap-2">
+                {isLive && (
+                  <View className="flex-row items-center gap-2 px-4 py-2 rounded-full bg-red-500 border border-red-500">
+                    <View className="w-2.5 h-2.5 rounded-full bg-white" />
+                    <Text className="text-sm font-inter-bold text-white tracking-wider uppercase">LIVE</Text>
+                  </View>
+                )}
+                {isLive && (
+                  <View className="flex-row items-center gap-2 px-4 py-2 rounded-full bg-black/20 border border-black/30">
+                    <Feather name="users" size={16} color="#fff" />
+                    <Text className="text-sm font-inter-semibold text-white">{viewerCount}</Text>
+                  </View>
+                )}
               </View>
-            </SafeAreaView>
+              <View className="flex-row items-center gap-2">
+                <TouchableOpacity
+                  onPress={handleShareStream}
+                  className="p-3 rounded-xl shadow-xl bg-gray-100 border border-gray-200 active:bg-gray-200"
+                >
+                  <Feather name="share-2" size={16} color="#000" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowControls(!showControls)}
+                  className="p-3 rounded-xl shadow-xl bg-gray-100 border border-gray-200 active:bg-gray-200"
+                >
+                  <Feather name="settings" size={16} color="#000" />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           {/* Auction/Buying Overlay - Bottom Center - Enhanced Design */}
@@ -693,12 +638,14 @@ export default function StartStreamScreen() {
             </View>
           )}
 
-          {/* Chat Overlay - Right Side (Collapsible) - Enhanced Design */}
-          {showChat && (
-            <View className="absolute right-0 top-0 bottom-0 w-full z-20">
-              <LiveChat streamId={currentStreamId} onClose={() => setShowChat(false)} />
-            </View>
-          )}
+          {/* Chat Overlay - Full Screen - Enhanced Design */}
+          {/* Keep LiveChat mounted to maintain RTM connection */}
+          <View
+            className={`absolute inset-0 z-20 ${showChat ? '' : 'pointer-events-none'}`}
+            style={{ display: showChat ? 'flex' : 'none' }}
+          >
+            <LiveChat streamId={currentStreamId} onClose={() => setShowChat(false)} isVisible={showChat} />
+          </View>
 
           {/* Bottom Controls Overlay - Enhanced Design */}
           <View className="absolute bottom-0 left-0 right-0 z-10">
@@ -758,15 +705,17 @@ export default function StartStreamScreen() {
             </View>
           </View>
         </View>
+      </KeyboardAvoidingView>
 
-        {/* Stream Controls Drawer Modal - Enhanced Design */}
-        <Modal visible={showControls} animationType="slide" transparent onRequestClose={() => setShowControls(false)}>
-          <Pressable className="flex-1 justify-end bg-black/60" onPress={() => setShowControls(false)}>
-            <Pressable className="bg-white rounded-t-2xl max-h-[90%]" onPress={(e) => e.stopPropagation()}>
+      {/* Stream Controls Drawer Modal - Enhanced Design */}
+      <Modal visible={showControls} animationType="slide" transparent onRequestClose={() => setShowControls(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setShowControls(false)}>
+            <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
               <View className="flex-col gap-2 p-4 border-b border-gray-200">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-xl font-inter-bold text-gray-900">Stream Controls</Text>
-                  <TouchableOpacity onPress={() => setShowControls(false)}>
+                  <TouchableOpacity onPress={() => setShowControls(false)} hitSlop={8}>
                     <Feather name="x" size={24} color="#000" />
                   </TouchableOpacity>
                 </View>
@@ -1013,23 +962,25 @@ export default function StartStreamScreen() {
                   </View>
                 </View>
               </ScrollView>
-            </Pressable>
+            </SafeAreaView>
           </Pressable>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
 
-        {/* Show Features Modal - Enhanced Design */}
-        <Modal
-          visible={showFeaturesModal}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setShowFeaturesModal(false)}
-        >
-          <Pressable className="flex-1 justify-end bg-black/60" onPress={() => setShowFeaturesModal(false)}>
-            <Pressable className="bg-white rounded-t-2xl max-h-[60%]" onPress={(e) => e.stopPropagation()}>
+      {/* Show Features Modal - Enhanced Design */}
+      <Modal
+        visible={showFeaturesModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFeaturesModal(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setShowFeaturesModal(false)}>
+            <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
               <View className="flex-col gap-2 p-4 border-b border-gray-200">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-lg font-inter-bold text-gray-900">Select Show Features</Text>
-                  <TouchableOpacity onPress={() => setShowFeaturesModal(false)}>
+                  <TouchableOpacity onPress={() => setShowFeaturesModal(false)} hitSlop={8}>
                     <Feather name="x" size={24} color="#000" />
                   </TouchableOpacity>
                 </View>
@@ -1083,7 +1034,7 @@ export default function StartStreamScreen() {
                     </View>
                   ))}
                   {allFeatures.length === 0 && (
-                    <View className="py-16 items-center">
+                    <View className="p-16 items-center">
                       <View className="w-20 h-20 items-center justify-center mb-4 rounded-full bg-gray-100">
                         <Feather name="package" size={28} color="#9ca3af" />
                       </View>
@@ -1092,23 +1043,25 @@ export default function StartStreamScreen() {
                   )}
                 </View>
               </ScrollView>
-            </Pressable>
+            </SafeAreaView>
           </Pressable>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
 
-        {/* Price Settings Modal - Enhanced Design */}
-        <Modal
-          visible={showPriceSettings}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setShowPriceSettings(false)}
-        >
-          <Pressable className="flex-1 justify-end bg-black/60" onPress={() => setShowPriceSettings(false)}>
-            <Pressable className="bg-white rounded-t-2xl max-h-[60%]" onPress={(e) => e.stopPropagation()}>
+      {/* Price Settings Modal - Enhanced Design */}
+      <Modal
+        visible={showPriceSettings}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowPriceSettings(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setShowPriceSettings(false)}>
+            <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
               <View className="flex-col gap-2 p-4 border-b border-gray-200">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-lg font-inter-bold text-gray-900">Customize Price Buttons</Text>
-                  <TouchableOpacity onPress={() => setShowPriceSettings(false)}>
+                  <TouchableOpacity onPress={() => setShowPriceSettings(false)} hitSlop={8}>
                     <Feather name="x" size={24} color="#000" />
                   </TouchableOpacity>
                 </View>
@@ -1148,23 +1101,25 @@ export default function StartStreamScreen() {
                   </TouchableOpacity>
                 </View>
               </ScrollView>
-            </Pressable>
+            </SafeAreaView>
           </Pressable>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
 
-        {/* Duration Settings Modal - Enhanced Design */}
-        <Modal
-          visible={showDurationSettings}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setShowDurationSettings(false)}
-        >
-          <Pressable className="flex-1 justify-end bg-black/60" onPress={() => setShowDurationSettings(false)}>
-            <Pressable className="bg-white rounded-t-2xl max-h-[60%]" onPress={(e) => e.stopPropagation()}>
+      {/* Duration Settings Modal - Enhanced Design */}
+      <Modal
+        visible={showDurationSettings}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowDurationSettings(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setShowDurationSettings(false)}>
+            <SafeAreaView edges={['bottom']} className="max-h-[80%] w-full rounded-t-2xl bg-white">
               <View className="flex-col gap-2 p-4 border-b border-gray-200">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-lg font-inter-bold text-gray-900">Customize Duration Buttons</Text>
-                  <TouchableOpacity onPress={() => setShowDurationSettings(false)}>
+                  <TouchableOpacity onPress={() => setShowDurationSettings(false)} hitSlop={8}>
                     <Feather name="x" size={24} color="#000" />
                   </TouchableOpacity>
                 </View>
@@ -1206,10 +1161,10 @@ export default function StartStreamScreen() {
                   </TouchableOpacity>
                 </View>
               </ScrollView>
-            </Pressable>
+            </SafeAreaView>
           </Pressable>
-        </Modal>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

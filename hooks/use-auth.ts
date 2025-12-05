@@ -11,7 +11,7 @@ import {
 
 export const useAuth = () => {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, user, loading, error, isInitialized } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, user, loading, error } = useAppSelector((state) => state.auth);
 
   const login = async (email: string, password: string) => {
     if (loading) return;
@@ -42,7 +42,13 @@ export const useAuth = () => {
     dispatch(resetPassword(email));
   };
 
-  const updateProfile = async (data: { username?: string; full_name?: string; bio?: string; avatar_url?: string; user_type?: string }) => {
+  const updateProfile = async (data: {
+    username?: string;
+    full_name?: string;
+    bio?: string;
+    avatar_url?: string;
+    user_type?: string;
+  }) => {
     const result = await dispatch(updateProfileAction(data));
     return result;
   };
@@ -66,7 +72,6 @@ export const useAuth = () => {
     user,
     loading,
     error,
-    isInitialized,
     login,
     register,
     resetPassword: resetPasswordAction,

@@ -1,7 +1,9 @@
-import { Order, ordersService } from '@/api';
+import { ordersService } from '@/api/services';
+import { Order } from '@/api/types';
 import { OrderDetailsModal } from '@/components/order-details-modal';
 import { useAuth } from '@/hooks/use-auth';
 import { blurhash } from '@/utils';
+import { logger } from '@/utils/logger';
 import { Feather } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import { Image } from 'expo-image';
@@ -51,7 +53,7 @@ export default function OrdersScreen() {
       const fetchedOrders = await ordersService.getOrders(user.id, 'seller');
       setOrders(fetchedOrders);
     } catch (err) {
-      console.error('Error loading orders:', err);
+      logger.error('Error loading orders', err);
       setError(err instanceof Error ? err.message : 'Error loading orders');
     } finally {
       setIsLoading(false);
@@ -178,7 +180,7 @@ export default function OrdersScreen() {
             UTI: 'com.microsoft.excel.xlsx',
           });
         } catch (shareError) {
-          console.log('Share cancelled or failed:', shareError);
+          logger.error('Share cancelled or failed', shareError);
           // User cancelled or error occurred
           Alert.alert(
             'File Saved',
@@ -204,7 +206,7 @@ export default function OrdersScreen() {
         ]);
       }
     } catch (error) {
-      console.error('Error exporting to Excel:', error);
+      logger.error('Error exporting to Excel', error);
       Alert.alert('Export Error', 'Failed to export data to Excel. Please try again.');
     } finally {
       setIsExporting(false);
@@ -329,13 +331,13 @@ export default function OrdersScreen() {
         {isLoading ? (
           <View className="flex-1 items-center justify-center p-4">
             <ActivityIndicator size="large" color="#000" />
-            <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading your orders...</Text>
+            <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading your orders...</Text>
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center p-4">
             <Feather name="alert-circle" color="#ff4444" size={64} />
-            <Text className="my-4 text-lg font-inter-bold text-red-500">Error loading orders</Text>
-            <TouchableOpacity onPress={loadOrders} className="bg-black rounded-lg py-3 px-6">
+            <Text className="mt-2 mb-4 text-lg font-inter-bold text-red-500">Error loading orders</Text>
+            <TouchableOpacity onPress={loadOrders} className="px-6 py-3 rounded-lg bg-black">
               <Text className="text-base font-inter-bold text-white">Retry</Text>
             </TouchableOpacity>
           </View>

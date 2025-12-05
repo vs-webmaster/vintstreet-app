@@ -1,11 +1,13 @@
-import { Conversation, messagesService } from '@/api';
+import { messagesService } from '@/api/services';
+import { Conversation } from '@/api/types';
 import { useAuth } from '@/hooks/use-auth';
+import { logger } from '@/utils/logger';
 import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 
 export default function MessagesScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -22,7 +24,7 @@ export default function MessagesScreen() {
   }, [user?.id]);
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       if (user?.id) {
         loadConversations();
       }
@@ -45,7 +47,7 @@ export default function MessagesScreen() {
       const fetchedConversations = await messagesService.getReceivedMessages(user.id);
       setConversations(fetchedConversations);
     } catch (err) {
-      console.error('Error loading messages:', err);
+      logger.error('Error loading messages:', err);
       setError(err instanceof Error ? err.message : 'Error loading messages');
     } finally {
       setIsLoading(false);
@@ -128,13 +130,13 @@ export default function MessagesScreen() {
         {isLoading ? (
           <View className="flex-1 items-center justify-center p-4">
             <ActivityIndicator size="large" color="#000" />
-            <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading messages...</Text>
+            <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading messages...</Text>
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center p-4">
             <Feather name="alert-circle" color="#ff4444" size={64} />
-            <Text className="my-4 text-lg font-inter-bold text-red-500">Error loading messages</Text>
-            <TouchableOpacity onPress={loadConversations} className="bg-black rounded-lg py-3 px-6">
+            <Text className="mt-2 mb-4 text-lg font-inter-bold text-red-500">Error loading messages</Text>
+            <TouchableOpacity onPress={loadConversations} className="px-6 py-3 rounded-lg bg-black">
               <Text className="text-base font-inter-bold text-white">Retry</Text>
             </TouchableOpacity>
           </View>
@@ -143,7 +145,7 @@ export default function MessagesScreen() {
             <Feather name="inbox" size={64} color="#ccc" />
             <Text className="mt-4 mb-2 text-lg font-inter-bold text-gray-600">No messages yet</Text>
             <Text className="text-sm font-inter-semibold text-center text-gray-400">
-              You haven't received any messages yet
+              You haven't received unknown messages yet
             </Text>
           </View>
         ) : filteredConversations.length === 0 ? (

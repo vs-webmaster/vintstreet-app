@@ -1,8 +1,20 @@
-import { supabase } from '@/api';
+import { categoriesService } from '@/api/services';
+import { logger } from '@/utils/logger';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface ProductSubSubSubcategory {
   id: string;
@@ -16,6 +28,7 @@ interface ProductSubSubcategory {
   name: string;
   slug: string;
   subcategory_id: string;
+  show_in_mega_menu?: boolean;
   product_sub_sub_subcategories?: ProductSubSubSubcategory[];
 }
 
@@ -24,6 +37,7 @@ interface ProductSubcategory {
   name: string;
   slug: string;
   category_id: string;
+  show_in_mega_menu?: boolean;
   product_sub_subcategories?: ProductSubSubcategory[];
 }
 
@@ -37,16 +51,46 @@ interface CategoryBrand {
   brands: Brand;
 }
 
+interface MenuImage {
+  id: string;
+  image_url: string;
+  image_alt?: string;
+  image_link?: string;
+  layout_id: string;
+}
+
+interface CustomListItem {
+  id: string;
+  name: string;
+  url?: string;
+  display_name?: string;
+  category_id?: string;
+  category_level?: number;
+  list_id: string;
+}
+
+interface CustomList {
+  id: string;
+  name: string;
+  system_name?: string;
+  list_type?: string;
+  category_id: string;
+  items?: CustomListItem[];
+}
+
 interface ProductCategory {
   id: string;
   name: string;
   slug: string;
   icon?: string;
+  layout?: unknown;
+  images?: MenuImage[];
   brands: CategoryBrand[];
   product_subcategories: ProductSubcategory[];
   trending: Array<{ id: string; name: string; path?: string }>;
   bestSellers: Array<{ id: string; name: string; path?: string }>;
   luxuryBrands: CategoryBrand[];
+  customLists?: CustomList[];
 }
 
 export const MegaMenuNav = () => {
@@ -54,130 +98,40 @@ export const MegaMenuNav = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [allCustomLists, setAllCustomLists] = useState<CustomList[]>([]);
+  const [allCustomItems, setAllCustomItems] = useState<CustomListItem[]>([]);
 
   useEffect(() => {
     fetchCategories();
+    fetchCustomLists();
+    fetchCustomItems();
   }, []);
+
+  const fetchCustomLists = async () => {
+    try {
+      const data = await categoriesService.getMegaMenuCustomLists();
+      setAllCustomLists(data as unknown as CustomList[]);
+    } catch (error) {
+      logger.error('Error fetching custom lists:', error);
+    }
+  };
+
+  const fetchCustomItems = async () => {
+    try {
+      const data = await categoriesService.getMegaMenuCustomListItems();
+      setAllCustomItems(data as CustomListItem[]);
+    } catch (error) {
+      logger.error('Error fetching custom items:', error);
+    }
+  };
 
   const fetchCategories = async () => {
     try {
       setIsLoading(true);
-      const [cats, subs, subSubs, subSubSubs, categoryBrands, trending, bestSellers, luxuryBrands] = await Promise.all([
-        supabase
-          .from('product_categories')
-          .select('id, name, slug, icon')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-        supabase.from('product_subcategories').select('id, name, slug, category_id').eq('is_active', true),
-        supabase.from('product_sub_subcategories').select('id, name, slug, subcategory_id').eq('is_active', true),
-        supabase
-          .from('product_sub_sub_subcategories')
-          .select('id, name, slug, sub_subcategory_id')
-          .eq('is_active', true),
-        supabase
-          .from('mega_menu_category_brands')
-          .select('category_id, brand_id, brands(id, name)')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-        supabase
-          .from('mega_menu_trending_items')
-          .select('category_id, sub_sub_subcategory_id')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-        supabase
-          .from('mega_menu_best_sellers')
-          .select('category_id, sub_sub_subcategory_id')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-        supabase
-          .from('mega_menu_luxury_brands')
-          .select('category_id, brand_id, brands(id, name)')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-      ]);
-
-      if (cats.error) throw cats.error;
-
-      // Build maps for quick lookup
-      const subsData = (subs.data as any[]) || [];
-      const subSubsData = (subSubs.data as any[]) || [];
-      const subSubSubsData = (subSubSubs.data as any[]) || [];
-      const categoryBrandsData = (categoryBrands.data as any[]) || [];
-      const trendingData = (trending.data as any[]) || [];
-      const bestSellersData = (bestSellers.data as any[]) || [];
-      const luxuryBrandsData = (luxuryBrands.data as any[]) || [];
-
-      const l2Map = new Map(subsData.map((s: any) => [s.id, s]));
-      const l3Map = new Map(subSubsData.map((ss: any) => [ss.id, ss]));
-      const l4Map = new Map(subSubSubsData.map((sss: any) => [sss.id, sss]));
-
-      // Build hierarchy client-side
-      const categoriesData = ((cats.data as any[]) || []).map((cat: any) => ({
-        id: cat.id,
-        name: cat.name,
-        slug: cat.slug,
-        icon: cat.icon,
-        brands: categoryBrandsData
-          .filter((cb: any) => cb.category_id === cat.id)
-          .map((cb: any) => ({
-            brand_id: cb.brand_id,
-            brands: cb.brands as Brand,
-          })),
-        trending: trendingData
-          .filter((t: any) => t.category_id === cat.id)
-          .map((t: any) => {
-            const l4 = l4Map.get(t.sub_sub_subcategory_id);
-            const l3 = l4 ? l3Map.get(l4.sub_subcategory_id) : undefined;
-            const l2 = l3 ? l2Map.get(l3.subcategory_id) : undefined;
-            return {
-              id: t.sub_sub_subcategory_id,
-              name: l4?.name,
-              path: l2 && l3 && l4 ? `/shop/${cat.slug}/${l2.slug}/${l3.slug}/${l4.slug}` : undefined,
-            };
-          }),
-        bestSellers: bestSellersData
-          .filter((bs: any) => bs.category_id === cat.id)
-          .map((bs: any) => {
-            const l4 = l4Map.get(bs.sub_sub_subcategory_id);
-            const l3 = l4 ? l3Map.get(l4.sub_subcategory_id) : undefined;
-            const l2 = l3 ? l2Map.get(l3.subcategory_id) : undefined;
-            return {
-              id: bs.sub_sub_subcategory_id,
-              name: l4?.name,
-              path: l2 && l3 && l4 ? `/shop/${cat.slug}/${l2.slug}/${l3.slug}/${l4.slug}` : undefined,
-            };
-          }),
-        luxuryBrands: luxuryBrandsData
-          .filter((lb: any) => lb.category_id === cat.id)
-          .map((lb: any) => ({
-            brand_id: lb.brand_id,
-            brands: lb.brands as Brand,
-          })),
-        product_subcategories: subsData
-          .filter((sub: any) => sub.category_id === cat.id)
-          .map((sub: any) => ({
-            id: sub.id,
-            name: sub.name,
-            slug: sub.slug,
-            category_id: sub.category_id,
-            product_sub_subcategories: subSubsData
-              .filter((subSub: any) => subSub.subcategory_id === sub.id)
-              .map((subSub: any) => ({
-                id: subSub.id,
-                name: subSub.name,
-                slug: subSub.slug,
-                subcategory_id: subSub.subcategory_id,
-                product_sub_sub_subcategories: subSubSubsData.filter(
-                  (subSubSub: any) => subSubSub.sub_subcategory_id === subSub.id
-                ),
-              })),
-          })),
-      }));
-
-      setCategories(categoriesData);
+      const categoriesData = await categoriesService.getMegaMenuCategories();
+      setCategories(categoriesData as ProductCategory[]);
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      logger.error('Error fetching categories:', error);
     } finally {
       setIsLoading(false);
     }
@@ -185,7 +139,6 @@ export const MegaMenuNav = () => {
 
   const handleCategoryPress = (categoryId: string, categorySlug: string) => {
     setActiveCategory(categoryId);
-    setSelectedSubcategory(null); // Reset selected subcategory when opening a new category
     setShowMenu(true);
   };
 
@@ -195,28 +148,342 @@ export const MegaMenuNav = () => {
     router.push({
       pathname: '/(tabs)/discovery',
       params: { category: categorySlug },
-    } as any);
+    } as unknown);
   };
 
   const handleLinkClick = (path: string) => {
     setShowMenu(false);
     setActiveCategory(null);
-    setSelectedSubcategory(null);
-    // For web-style paths, convert to React Native navigation
-    if (path.startsWith('/shop/')) {
-      const parts = path.split('/').filter(Boolean);
-      if (parts.length >= 2) {
+    // Handle different path formats
+    if (path.startsWith('/(tabs)/discovery')) {
+      // Parse query params from string like "/(tabs)/discovery?category=x&subcategory=y"
+      if (path.includes('?')) {
+        const [pathname, queryString] = path.split('?');
+        const params: unknown = {};
+        const pairs = queryString.split('&');
+        pairs.forEach((pair) => {
+          const [key, value] = pair.split('=');
+          if (key && value) {
+            params[key] = decodeURIComponent(value);
+          }
+        });
         router.push({
           pathname: '/(tabs)/discovery',
-          params: { category: parts[1] },
-        } as any);
+          params,
+        } as unknown);
+      } else {
+        router.push(path as unknown);
       }
+    } else if (path.startsWith('/shop/')) {
+      // Legacy web-style paths - convert to expo-router format
+      const parts = path.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        const params: unknown = { category: parts[1] };
+        if (parts.length >= 3) params.subcategory = parts[2];
+        if (parts.length >= 4) params.sub_subcategory = parts[3];
+        if (parts.length >= 5) params.sub_sub_subcategory = parts[4];
+        router.push({
+          pathname: '/(tabs)/discovery',
+          params,
+        } as unknown);
+      }
+    } else if (path.startsWith('http://') || path.startsWith('https://')) {
+      // External links
+      Linking.openURL(path);
     } else {
-      router.push(path as any);
+      router.push(path as unknown);
     }
   };
 
   const activeCategoryData = categories.find((cat) => cat.id === activeCategory);
+
+  const renderColumnContent = (category: ProductCategory | undefined, type: string, label: string) => {
+    if (!category) return null;
+
+    switch (type) {
+      case 'popular_brands':
+        if (!category.brands || category.brands.length === 0) return null;
+        return (
+          <View className="gap-1">
+            <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">{label}</Text>
+            <View>
+              {[...category.brands]
+                .sort((a, b) => a.brands.name.localeCompare(b.brands.name))
+                .map((categoryBrand) => (
+                  <Pressable
+                    key={categoryBrand.brand_id}
+                    onPress={() => {
+                      setShowMenu(false);
+                      setActiveCategory(null);
+                      router.push({
+                        pathname: '/(tabs)/discovery',
+                        params: {
+                          category: category.slug,
+                          brandName: categoryBrand.brands.name,
+                        },
+                      } as unknown);
+                    }}
+                    className="p-2 active:bg-gray-50 rounded"
+                  >
+                    <Text className="text-sm font-inter-regular text-gray-700">{categoryBrand.brands.name}</Text>
+                  </Pressable>
+                ))}
+            </View>
+          </View>
+        );
+
+      case 'categories':
+        if (!category.product_subcategories || category.product_subcategories.length === 0) return null;
+        const visibleSubcategories = category.product_subcategories.filter(
+          (sub: unknown) => sub.show_in_mega_menu !== false
+        );
+        if (visibleSubcategories.length === 0) return null;
+        return (
+          <View className="gap-1">
+            {visibleSubcategories.map((subcategory: unknown) => (
+              <View key={subcategory.id} className="gap-1">
+                <Pressable
+                  onPress={() => {
+                    setShowMenu(false);
+                    setActiveCategory(null);
+                    router.push({
+                      pathname: '/(tabs)/discovery',
+                      params: {
+                        category: category.slug,
+                        subcategory: subcategory.slug,
+                      },
+                    } as unknown);
+                  }}
+                  className="active:opacity-70"
+                >
+                  <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">
+                    {subcategory.name}
+                  </Text>
+                </Pressable>
+                {subcategory.product_sub_subcategories && subcategory.product_sub_subcategories.length > 0 && (
+                  <View>
+                    {subcategory.product_sub_subcategories
+                      .filter((subSub: unknown) => subSub.show_in_mega_menu !== false)
+                      .map((subSubcategory: unknown) => (
+                        <Pressable
+                          key={subSubcategory.id}
+                          onPress={() => {
+                            setShowMenu(false);
+                            setActiveCategory(null);
+                            router.push({
+                              pathname: '/(tabs)/discovery',
+                              params: {
+                                category: category.slug,
+                                subcategory: subcategory.slug,
+                                sub_subcategory: subSubcategory.slug,
+                              },
+                            } as unknown);
+                          }}
+                          className="p-2 active:bg-gray-50 rounded"
+                        >
+                          <Text className="text-sm font-inter-regular text-gray-600">{subSubcategory.name}</Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        );
+
+      case 'trending':
+        if (!category.trending || category.trending.length === 0) return null;
+        return (
+          <View className="gap-1">
+            <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">{label}</Text>
+            <View>
+              {[...category.trending]
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map((item) =>
+                  item.path ? (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => handleLinkClick(item.path!)}
+                      className="p-2 active:bg-gray-50 rounded"
+                    >
+                      <Text className="text-sm font-inter-regular text-gray-700">{item.name}</Text>
+                    </Pressable>
+                  ) : null
+                )}
+            </View>
+          </View>
+        );
+
+      case 'best_sellers':
+        if (!category.bestSellers || category.bestSellers.length === 0) return null;
+        return (
+          <View className="gap-1">
+            <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">{label}</Text>
+            <View>
+              {[...category.bestSellers]
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map((item) =>
+                  item.path ? (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => handleLinkClick(item.path!)}
+                      className="p-2 active:bg-gray-50 rounded"
+                    >
+                      <Text className="text-sm font-inter-regular text-gray-700">{item.name}</Text>
+                    </Pressable>
+                  ) : null
+                )}
+            </View>
+          </View>
+        );
+
+      case 'luxury_brands':
+        if (!category.luxuryBrands || category.luxuryBrands.length === 0) return null;
+        return (
+          <View className="gap-1">
+            <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">{label}</Text>
+            <View>
+              {[...category.luxuryBrands]
+                .sort((a, b) => a.brands.name.localeCompare(b.brands.name))
+                .map((luxuryBrand) => (
+                  <Pressable
+                    key={luxuryBrand.brand_id}
+                    onPress={() => {
+                      setShowMenu(false);
+                      setActiveCategory(null);
+                      router.push({
+                        pathname: '/(tabs)/discovery',
+                        params: {
+                          category: category.slug,
+                          brandName: luxuryBrand.brands.name,
+                        },
+                      } as unknown);
+                    }}
+                    className="p-2 active:bg-gray-50 rounded"
+                  >
+                    <Text className="text-sm font-inter-regular text-gray-700">{luxuryBrand.brands.name}</Text>
+                  </Pressable>
+                ))}
+            </View>
+          </View>
+        );
+
+      case 'custom':
+        // Resolve custom list globally by its system_name (unique identifier)
+        const list = allCustomLists?.find((l: CustomList) => l.system_name === label);
+        if (!list) {
+          return null;
+        }
+        const items = allCustomItems?.filter((i: CustomListItem) => i.list_id === list.id) || [];
+        if (items.length === 0) {
+          return null;
+        }
+
+        const isHeaderLinks = list.list_type === 'header-links';
+
+        return (
+          <View className="gap-1">
+            {!isHeaderLinks && (
+              <Text className="text-sm font-inter-bold text-gray-900 uppercase tracking-wide">{list.name}</Text>
+            )}
+            <View className="gap-1">
+              {items.map((item: unknown) => {
+                // The URL is already generated in the allCustomItems query
+                const itemUrl = item.url || '/(tabs)/discovery';
+                const isExternal = itemUrl.startsWith('http://') || itemUrl.startsWith('https://');
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => {
+                      if (isExternal) {
+                        Linking.openURL(itemUrl);
+                      } else {
+                        handleLinkClick(itemUrl);
+                      }
+                    }}
+                    className={`p-2 active:bg-gray-50 rounded`}
+                  >
+                    <Text
+                      className={
+                        isHeaderLinks
+                          ? 'text-sm font-inter-bold text-gray-900'
+                          : 'text-sm font-inter-regular text-gray-700'
+                      }
+                    >
+                      {item.display_name || item.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const renderMegaMenuContent = (category: ProductCategory | undefined) => {
+    if (!category) return null;
+
+    const layout = category.layout;
+
+    // If no layout configured, use default all-text layout with all sections
+    if (!layout) {
+      return (
+        <View className="p-4">
+          <View className="flex-row gap-4" style={{ flexWrap: 'wrap' }}>
+            {category.brands && category.brands.length > 0 && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                {renderColumnContent(category, 'popular_brands', 'Popular Brands')}
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 140 }}>{renderColumnContent(category, 'categories', 'Clothing')}</View>
+            {category.trending && category.trending.length > 0 && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                {renderColumnContent(category, 'trending', "The Men's Edit")}
+              </View>
+            )}
+            {category.bestSellers && category.bestSellers.length > 0 && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                {renderColumnContent(category, 'best_sellers', 'Best Sellers')}
+              </View>
+            )}
+            {category.luxuryBrands && category.luxuryBrands.length > 0 && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                {renderColumnContent(category, 'luxury_brands', 'Luxury Brands')}
+              </View>
+            )}
+          </View>
+        </View>
+      );
+    }
+
+    // Render based on configured layout
+    let columns = layout.columns || [];
+    // Normalize old format to new format
+    if (columns.length > 0 && !columns[0].items) {
+      columns = columns.map((col: unknown) => ({
+        items: [{ type: col.type, label: col.label }],
+      }));
+    }
+
+    return (
+      <View className="p-4">
+        <View className="flex-row gap-4" style={{ flexWrap: 'wrap' }}>
+          {columns.map((col: unknown, index: number) => (
+            <View key={index} style={{ flex: 1, minWidth: 140 }}>
+              {col.items?.map((item: unknown, itemIndex: number) => (
+                <View key={itemIndex}>{renderColumnContent(category, item.type, item.label)}</View>
+              ))}
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -265,226 +532,67 @@ export const MegaMenuNav = () => {
         onRequestClose={() => {
           setShowMenu(false);
           setActiveCategory(null);
-          setSelectedSubcategory(null);
         }}
       >
-        <Pressable
-          className="flex-1 justify-end bg-black/50"
-          onPress={() => {
-            setShowMenu(false);
-            setActiveCategory(null);
-            setSelectedSubcategory(null);
-          }}
-        >
-          <Pressable className="h-3/4 bg-white rounded-t-2xl" onPress={(e) => e.stopPropagation()}>
+        <View className="flex-1 justify-end bg-black/50">
+          <SafeAreaView edges={['bottom']} className="w-full h-4/5 rounded-t-2xl bg-white">
             {/* Header */}
             <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
-              <View className="flex-row items-center gap-2">
-                <Text className="text-xl font-inter-bold text-gray-900">
-                  {activeCategoryData?.name || 'Categories'}
-                </Text>
-              </View>
-              <Pressable
+              <Text className="text-xl font-inter-bold text-gray-900">{activeCategoryData?.name || 'Categories'}</Text>
+              <TouchableOpacity
                 onPress={() => {
                   setShowMenu(false);
                   setActiveCategory(null);
-                  setSelectedSubcategory(null);
                 }}
+                hitSlop={8}
               >
                 <Feather name="x" size={24} color="#000" />
-              </Pressable>
+              </TouchableOpacity>
             </View>
 
             {/* Content */}
-            <View className="flex-1 flex-row">
-              {/* Left Sidebar - Category Title */}
-              <View className="w-32 bg-gray-100 border-r border-gray-200">
-                <Pressable
-                  onPress={() => {
-                    setSelectedSubcategory(null);
-                  }}
-                  className={`p-4 border-b border-gray-200 ${
-                    selectedSubcategory === null ? 'bg-white' : 'bg-gray-100'
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-inter-bold ${
-                      selectedSubcategory === null ? 'text-black' : 'text-gray-700'
-                    }`}
-                  >
-                    {activeCategoryData?.name || 'Category'}
-                  </Text>
-                </Pressable>
-                {activeCategoryData?.product_subcategories && activeCategoryData.product_subcategories.length > 0 && (
-                  <ScrollView className="flex-1">
-                    {activeCategoryData.product_subcategories.map((subcategory) => (
-                      <Pressable
-                        key={subcategory.id}
-                        onPress={() => {
-                          setSelectedSubcategory(subcategory.id);
-                        }}
-                        className={`p-4 border-b border-gray-200 ${
-                          selectedSubcategory === subcategory.id ? 'bg-white' : 'bg-gray-100'
-                        }`}
-                      >
-                        <Text
-                          className={`text-sm font-inter-semibold ${
-                            selectedSubcategory === subcategory.id ? 'text-black' : 'text-gray-700'
-                          }`}
-                        >
-                          {subcategory.name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-
-              {/* Right Section - Content */}
-              <View className="flex-1 bg-white">
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{ flexGrow: 1 }}
-                >
-                  {selectedSubcategory ? (
-                    // Show sub-subcategories when a subcategory is selected
-                    <View className="gap-2">
-                      {activeCategoryData?.product_subcategories
-                        ?.find((sub) => sub.id === selectedSubcategory)
-                        ?.product_sub_subcategories?.map((subSubcategory) => (
-                          <Pressable
-                            key={subSubcategory.id}
-                            onPress={() => {
-                              setShowMenu(false);
-                              setActiveCategory(null);
-                              setSelectedSubcategory(null);
-                              router.push({
-                                pathname: '/(tabs)/discovery',
-                                params: {
-                                  category: activeCategoryData.slug,
-                                  subcategory: activeCategoryData.product_subcategories.find(
-                                    (s) => s.id === selectedSubcategory
-                                  )?.slug,
-                                  sub_subcategory: subSubcategory.slug,
-                                },
-                              } as any);
-                            }}
-                            className="py-3 px-4 border-b border-gray-100"
-                          >
-                            <Text className="text-base font-inter-medium text-black">{subSubcategory.name}</Text>
-                          </Pressable>
-                        ))}
-                    </View>
-                  ) : (
-                    <View className="gap-4 p-4">
-                      {/* Column 1: Popular Brands */}
-                      {activeCategoryData?.brands && activeCategoryData.brands.length > 0 && (
-                        <View className="gap-2">
-                          <Text className="text-sm font-inter-bold text-black">Popular Brands</Text>
-                          <View className="gap-2">
-                            {[...activeCategoryData.brands]
-                              .sort((a, b) => a.brands.name.localeCompare(b.brands.name))
-                              .map((categoryBrand) => (
-                                <Pressable
-                                  key={categoryBrand.brand_id}
-                                  onPress={() => {
-                                    setShowMenu(false);
-                                    setActiveCategory(null);
-                                    setSelectedSubcategory(null);
-                                    router.push({
-                                      pathname: '/(tabs)/discovery',
-                                      params: {
-                                        category: activeCategoryData.slug,
-                                        brandName: categoryBrand.brands.name,
-                                      },
-                                    } as any);
-                                  }}
-                                  className="py-2"
-                                >
-                                  <Text className="text-sm font-inter-medium text-gray-700">
-                                    {categoryBrand.brands.name}
-                                  </Text>
-                                </Pressable>
-                              ))}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Column 2: Trending */}
-                      {activeCategoryData?.trending && activeCategoryData.trending.length > 0 && (
-                        <View className="gap-2">
-                          <Text className="text-sm font-inter-bold text-black">Trending</Text>
-                          <View className="gap-2">
-                            {[...activeCategoryData.trending]
-                              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                              .map((item) =>
-                                item.path ? (
-                                  <Pressable key={item.id} onPress={() => handleLinkClick(item.path!)} className="py-2">
-                                    <Text className="text-sm font-inter-medium text-gray-700">{item.name}</Text>
-                                  </Pressable>
-                                ) : null
-                              )}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Column 3: Best Sellers */}
-                      {activeCategoryData?.bestSellers && activeCategoryData.bestSellers.length > 0 && (
-                        <View className="gap-2">
-                          <Text className="text-sm font-inter-bold text-black">Best Sellers</Text>
-                          <View className="gap-2">
-                            {[...activeCategoryData.bestSellers]
-                              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                              .map((item) =>
-                                item.path ? (
-                                  <Pressable key={item.id} onPress={() => handleLinkClick(item.path!)} className="py-2">
-                                    <Text className="text-sm font-inter-medium text-gray-700">{item.name}</Text>
-                                  </Pressable>
-                                ) : null
-                              )}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Column 4: Luxury Brands */}
-                      {activeCategoryData?.luxuryBrands && activeCategoryData.luxuryBrands.length > 0 && (
-                        <View className="gap-2">
-                          <Text className="text-sm font-inter-bold text-black">Luxury Brands</Text>
-                          <View className="gap-2">
-                            {[...activeCategoryData.luxuryBrands]
-                              .sort((a, b) => a.brands.name.localeCompare(b.brands.name))
-                              .map((luxuryBrand) => (
-                                <Pressable
-                                  key={luxuryBrand.brand_id}
-                                  onPress={() => {
-                                    setShowMenu(false);
-                                    setActiveCategory(null);
-                                    setSelectedSubcategory(null);
-                                    router.push({
-                                      pathname: '/(tabs)/discovery',
-                                      params: {
-                                        category: activeCategoryData.slug,
-                                        brandName: luxuryBrand.brands.name,
-                                      },
-                                    } as any);
-                                  }}
-                                  className="py-2"
-                                >
-                                  <Text className="text-sm font-inter-medium text-gray-700">
-                                    {luxuryBrand.brands.name}
-                                  </Text>
-                                </Pressable>
-                              ))}
-                          </View>
-                        </View>
-                      )}
-                    </View>
-                  )}
+            <View className="flex-1 bg-white flex-row">
+              {/* Left Section - Content */}
+              <View className="flex-1">
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+                  {renderMegaMenuContent(activeCategoryData)}
                 </ScrollView>
               </View>
+
+              {/* Right Section - Hero Image */}
+              {activeCategoryData?.images && activeCategoryData.images.length > 0 && (
+                <View className="w-48 p-4 border-l border-gray-200">
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+                    {activeCategoryData.images.map((image: unknown) => (
+                      <View key={image.id} className="rounded-xl overflow-hidden shadow-sm bg-gray-100 mb-4">
+                        {image.image_link ? (
+                          <Pressable
+                            onPress={() => {
+                              handleLinkClick(image.image_link);
+                            }}
+                            className="active:opacity-90"
+                          >
+                            <Image
+                              source={{ uri: image.image_url }}
+                              style={{ width: '100%', height: 300 }}
+                              resizeMode="cover"
+                            />
+                          </Pressable>
+                        ) : (
+                          <Image
+                            source={{ uri: image.image_url }}
+                            style={{ width: '100%', aspectRatio: 1 }}
+                            resizeMode="cover"
+                          />
+                        )}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
-          </Pressable>
-        </Pressable>
+          </SafeAreaView>
+        </View>
       </Modal>
     </>
   );

@@ -1,9 +1,12 @@
-import { Product } from '@/api';
+import { Product } from '@/api/types';
+import { useAuth } from '@/hooks/use-auth';
 import { useCart } from '@/hooks/use-cart';
 import { useWishlist } from '@/hooks/use-wishlist';
-import { blurhash } from '@/utils';
+import { blurhash, formatPrice } from '@/utils';
+import { logger } from '@/utils/logger';
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { router, useSegments } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, Dimensions, Pressable, Text, View } from 'react-native';
 
@@ -22,25 +25,42 @@ const ProductCard: React.FC<ProductCardProps> = ({
   width = screenWidth / 2 - 12,
   height = width * (4 / 3),
 }) => {
-  const { addItem, cart } = useCart();
+  const segments = useSegments();
+  const { isAuthenticated } = useAuth();
+  const { addItem, isInCart } = useCart();
   const { toggleItem, isInWishlist } = useWishlist();
   const [isAddingToCart, setIsAddingToCart] = useState(false);
 
+  const isCarted = isInCart(product.id);
   const isWishlisted = isInWishlist(product.id);
-  const isInCart = cart.items.some((cartItem) => cartItem.product?.id === product.id);
+
+  const redirectToLogin = () => {
+    const currentPath = '/' + segments.join('/');
+    router.push(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
+  };
 
   const handleAddToCart = async () => {
+    if (!isAuthenticated) {
+      redirectToLogin();
+      return;
+    }
+
     try {
       setIsAddingToCart(true);
       await addItem(product);
     } catch (error) {
-      console.error('Error adding to cart:', error);
+      logger.error('Error adding to cart:', error);
     } finally {
       setIsAddingToCart(false);
     }
   };
 
   const handleToggleWishlist = () => {
+    if (!isAuthenticated) {
+      redirectToLogin();
+      return;
+    }
+
     toggleItem(product);
   };
 
@@ -59,11 +79,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
           onPress={handleToggleWishlist}
           className="absolute top-3 right-3 bg-white rounded-full p-2 shadow-sm"
         >
-          <FontAwesome
-            name={isWishlisted ? 'heart' : 'heart-o'}
-            size={18}
-            color={isWishlisted ? '#ef4444' : 'black'}
-          />
+          <FontAwesome name={isWishlisted ? 'heart' : 'heart-o'} size={18} color={isWishlisted ? '#ef4444' : 'black'} />
         </Pressable>
       </View>
 
@@ -75,38 +91,25 @@ const ProductCard: React.FC<ProductCardProps> = ({
         <View className="flex-row items-center justify-between">
           <View>
             <Text className="text-xl font-inter-bold text-black mb-1">
-              £
-              {product.discounted_price !== null
-                ? product.discounted_price.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : product.starting_price.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+              £{formatPrice(product.discounted_price || product.starting_price)}
             </Text>
             {product.discounted_price !== null && (
               <Text className="text-sm font-inter-semibold text-gray-400 line-through">
-                £
-                {product.starting_price.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                £{formatPrice(product.starting_price)}
               </Text>
             )}
           </View>
 
           <Pressable
             onPress={handleAddToCart}
-            disabled={isAddingToCart || isInCart}
+            disabled={isAddingToCart || isCarted}
             className={`${
-              isInCart ? 'bg-gray-100 border-2 border-gray-300' : 'bg-white border border-gray-200'
+              isCarted ? 'bg-gray-100 border-2 border-gray-300' : 'bg-white border border-gray-200'
             } rounded-lg w-10 h-10 items-center justify-center`}
           >
             {isAddingToCart ? (
               <ActivityIndicator size="small" color="#000" />
-            ) : isInCart ? (
+            ) : isCarted ? (
               <Feather name="check" size={20} color="#000" />
             ) : (
               <Feather name="shopping-cart" size={20} color="#000" />

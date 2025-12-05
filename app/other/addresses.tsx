@@ -1,5 +1,7 @@
-import { SavedAddress, savedAddressesService } from '@/api';
+import { savedAddressesService } from '@/api/services';
+import { SavedAddress } from '@/api/types';
 import { useAuth } from '@/hooks/use-auth';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -25,9 +27,9 @@ export default function AddressesScreen() {
 
     try {
       const data = await savedAddressesService.list(user.id);
-      setAddresses(data as SavedAddress[] || []);
-    } catch (err: any) {
-      console.error('Error loading addresses:', err);
+      setAddresses((data as SavedAddress[]) || []);
+    } catch (err: unknown) {
+      logger.error('Error loading addresses:', err);
       showErrorToast(err.message || 'Error loading addresses');
     } finally {
       setIsLoading(false);
@@ -35,11 +37,11 @@ export default function AddressesScreen() {
   };
 
   const addAddress = () => {
-    router.push('/other/address-form' as any);
+    router.push('/other/address-form' as unknown);
   };
 
   const editAddress = (addressId: string) => {
-    router.push(`/other/address-form?id=${addressId}` as any);
+    router.push(`/other/address-form?id=${addressId}` as unknown);
   };
 
   const deleteAddress = (address: SavedAddress) => {
@@ -56,8 +58,8 @@ export default function AddressesScreen() {
             await savedAddressesService.remove(address.id);
             showSuccessToast('Address deleted successfully');
             loadAddresses();
-          } catch (err: any) {
-            console.error('Error deleting address:', err);
+          } catch (err: unknown) {
+            logger.error('Error deleting address:', err);
             showErrorToast(err.message || 'Failed to delete address');
           }
         },
@@ -132,7 +134,7 @@ export default function AddressesScreen() {
         <View className="flex-1">
           <View className="flex-1 items-center justify-center p-4">
             <ActivityIndicator size="large" color="#000" />
-            <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading addresses...</Text>
+            <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading addresses...</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -164,7 +166,7 @@ export default function AddressesScreen() {
               <Text className="text-gray-600 text-sm font-inter text-center mb-6">
                 Add your first address to make checkout faster
               </Text>
-              <TouchableOpacity onPress={addAddress} className="bg-black rounded-lg py-3 px-6 flex-row items-center">
+              <TouchableOpacity onPress={addAddress} className="px-6 py-3 rounded-lg bg-black flex-row items-center">
                 <Feather name="plus" size={18} color="#fff" />
                 <Text className="ml-2 text-white text-base font-inter-bold">Add Address</Text>
               </TouchableOpacity>

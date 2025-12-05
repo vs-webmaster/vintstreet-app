@@ -1,7 +1,9 @@
-import { Offer, offersService, Product } from '@/api';
+import { offersService } from '@/api/services';
+import { Offer, Product } from '@/api/types';
 import { MakeOfferModal } from '@/components/make-offer-modal';
 import { useAuth } from '@/hooks/use-auth';
 import { blurhash } from '@/utils';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -47,7 +49,7 @@ export default function MyOffersScreen() {
       const fetchedOffers = await offersService.getOffers(user.id, 'buyer');
       setOffers(fetchedOffers);
     } catch (err) {
-      console.error('Error loading offers:', err);
+      logger.error('Error loading offers:', err);
       setError(err instanceof Error ? err.message : 'Error loading offers');
     } finally {
       setIsLoading(false);
@@ -255,13 +257,13 @@ export default function MyOffersScreen() {
         {isLoading ? (
           <View className="flex-1 items-center justify-center p-4">
             <ActivityIndicator size="large" color="#000" />
-            <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading your offers...</Text>
+            <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading your offers...</Text>
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center p-4">
             <Feather name="alert-circle" color="#ff4444" size={64} />
-            <Text className="my-4 text-lg font-inter-bold text-red-500">Error loading offers</Text>
-            <TouchableOpacity onPress={loadOffers} className="bg-black rounded-lg py-3 px-6">
+            <Text className="mt-2 mb-4 text-lg font-inter-bold text-red-500">Error loading offers</Text>
+            <TouchableOpacity onPress={loadOffers} className="px-6 py-3 rounded-lg bg-black">
               <Text className="text-base font-inter-bold text-white">Retry</Text>
             </TouchableOpacity>
           </View>

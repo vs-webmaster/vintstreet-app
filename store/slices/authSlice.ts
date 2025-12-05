@@ -1,6 +1,8 @@
-import type { AuthUser } from '@/api';
-import { authService } from '@/api';
-import { getStorageValue, removeStorageValue, setStorageValue } from '@/utils/storage';
+import { authService } from '@/api/services';
+import { AuthUser } from '@/api/types';
+import { logger } from '@/utils/logger';
+import { removeSecureValue, setSecureValue } from '@/utils/secure-storage';
+import { removeStorageValue, setStorageValue } from '@/utils/storage';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 const KEY_TOKEN = 'TOKEN';
@@ -11,7 +13,6 @@ export interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   error: string | null;
-  isInitialized: boolean;
 }
 
 const initialState: AuthState = {
@@ -19,56 +20,7 @@ const initialState: AuthState = {
   user: null,
   loading: false,
   error: null,
-  isInitialized: false,
 };
-
-// Async thunks
-export const initializeAuth = createAsyncThunk('auth/initializeAuth', async () => {
-  try {
-    // Check for existing session with Supabase
-    const { session, error } = await authService.getSession();
-
-    if (session && !error) {
-      const { user: currentUser } = await authService.getCurrentUser();
-      if (currentUser) {
-        // Store in secure storage for persistence
-        await setStorageValue(KEY_TOKEN, session.access_token);
-        await setStorageValue(KEY_USER_DATA, JSON.stringify(currentUser));
-        return { user: currentUser, session };
-      }
-    }
-
-    // Check secure storage as fallback
-    const storedToken = await getStorageValue(KEY_TOKEN);
-    const storedUserData = await getStorageValue(KEY_USER_DATA);
-
-    if (storedToken && storedUserData) {
-      try {
-        const user = JSON.parse(storedUserData);
-        // Create a minimal session object for stored data
-        const session = {
-          access_token: storedToken,
-          refresh_token: '', // We don't store refresh tokens in secure storage
-          expires_at: 0, // Will be handled by Supabase
-          token_type: 'bearer',
-          user: user,
-        };
-        return { user, session };
-      } catch (error) {
-        console.error('Error parsing stored user data:', error);
-        // Clear invalid data
-        await removeStorageValue(KEY_TOKEN);
-        await removeStorageValue(KEY_USER_DATA);
-      }
-    }
-
-    // No session found - this is normal for first-time users
-    // Don't throw an error, just return null to indicate no authentication
-    return null;
-  } catch (error) {
-    throw error;
-  }
-});
 
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
@@ -90,9 +42,10 @@ export const loginUser = createAsyncThunk(
       throw new Error(authError || 'Login failed');
     }
 
-    // Store in secure storage
+    // Store user data in regular storage (non-sensitive)
     await setStorageValue(KEY_USER_DATA, JSON.stringify(authUser));
-    await setStorageValue(KEY_TOKEN, session.access_token);
+    // Store token in secure storage (encrypted)
+    await setSecureValue(KEY_TOKEN, session.access_token);
 
     return { user: authUser, session };
   }
@@ -123,8 +76,10 @@ export const registerUser = createAsyncThunk(
 
     // If session exists, store in secure storage
     if (session) {
+      // Store user data in regular storage (non-sensitive)
       await setStorageValue(KEY_USER_DATA, JSON.stringify(authUser));
-      await setStorageValue(KEY_TOKEN, session.access_token);
+      // Store token in secure storage (encrypted)
+      await setSecureValue(KEY_TOKEN, session.access_token);
     }
 
     return { user: authUser, session, requiresVerification: !session };
@@ -194,14 +149,15 @@ export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
     const { error: signOutError } = await authService.signOut();
 
     if (signOutError) {
-      console.error('Supabase sign out error:', signOutError);
+      logger.error('Supabase sign out error', signOutError);
       // Continue with local cleanup even if server signout fails
     }
   } catch (error) {
-    console.error('Logout error:', error);
+    logger.error('Logout error', error);
   } finally {
-    // Always clear local storage
-    await removeStorageValue(KEY_TOKEN);
+    // Remove token from secure storage
+    await removeSecureValue(KEY_TOKEN);
+    // Remove user data from regular storage
     await removeStorageValue(KEY_USER_DATA);
   }
 });
@@ -217,12 +173,11 @@ const authSlice = createSlice({
       state.loading = action.payload;
     },
     // Handle auth state changes from Supabase
-    handleAuthStateChange: (state, action: PayloadAction<{ event: string; session: any }>) => {
+    handleAuthStateChange: (state, action: PayloadAction<{ event: string; session: unknown }>) => {
       const { event, session } = action.payload;
 
       if (event === 'SIGNED_IN' && session) {
         // This will be handled by the auth listener in the provider
-        // The actual user data will be set by the initializeAuth thunk
       } else if (event === 'SIGNED_OUT') {
         state.user = null;
         state.isAuthenticated = false;
@@ -235,32 +190,6 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Initialize auth
-      .addCase(initializeAuth.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(initializeAuth.fulfilled, (state, action) => {
-        state.loading = false;
-        if (action.payload) {
-          // User has a valid session
-          state.isAuthenticated = true;
-          state.user = action.payload.user;
-        } else {
-          // No session found - normal for first-time users
-          state.isAuthenticated = false;
-          state.user = null;
-        }
-        state.error = null;
-        state.isInitialized = true;
-      })
-      .addCase(initializeAuth.rejected, (state, action) => {
-        state.loading = false;
-        state.isAuthenticated = false;
-        state.user = null;
-        state.error = action.error.message || 'Authentication initialization failed';
-        state.isInitialized = true;
-      })
       // Login
       .addCase(loginUser.pending, (state) => {
         state.loading = true;

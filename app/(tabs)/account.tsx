@@ -3,22 +3,14 @@ import { useAuth } from '@/hooks/use-auth';
 import { blurhash } from '@/utils';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AccountScreen() {
-  const { logout, user, changePassword, loading } = useAuth();
+  const segments = useSegments();
+  const { isAuthenticated, user, logout, changePassword } = useAuth();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -96,7 +88,7 @@ export default function AccountScreen() {
         handleClosePasswordModal();
       } else if (result.type === 'auth/updatePassword/rejected') {
         // Extract error message from rejected action
-        const rejectedResult = result as any;
+        const rejectedResult = result as unknown;
         const errorMessage = rejectedResult.error?.message || 'Failed to change password';
         Alert.alert('Error', errorMessage);
       }
@@ -106,6 +98,44 @@ export default function AccountScreen() {
       setIsChangingPassword(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          <View className="flex-1 items-center justify-center px-6 py-12">
+            <View className="items-center mb-8">
+              <View className="w-24 h-24 items-center justify-center mb-6 rounded-full bg-gray-100">
+                <Feather name="user" size={48} color="#9CA3AF" />
+              </View>
+              <Text className="text-base font-inter-semibold text-gray-500 text-center max-w-sm">
+                Please sign in to access your account and manage your profile
+              </Text>
+            </View>
+
+            <View className="w-full max-w-sm gap-4">
+              <Pressable
+                onPress={() => {
+                  const currentPath = '/' + segments.join('/');
+                  router.push(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
+                }}
+                className="w-full h-14 items-center justify-center rounded-lg bg-black"
+              >
+                <Text className="text-base font-inter-bold text-white">Sign In</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/(auth)/register')}
+                className="w-full h-14 items-center justify-center rounded-lg border-2 border-gray-300 bg-white"
+              >
+                <Text className="text-base font-inter-bold text-black">Create Account</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 mb-14 bg-white">
@@ -239,6 +269,12 @@ export default function AccountScreen() {
           <Pressable onPress={() => router.push('/other/offers')} className="flex-row items-center px-4 py-3">
             <Feather name="tag" size={24} color="#000" />
             <Text className="flex-1 ml-4 text-base font-inter-semibold text-black">My Offers</Text>
+            <Feather name="chevron-right" size={16} color="#000" />
+          </Pressable>
+
+          <Pressable onPress={() => router.push('/cart')} className="flex-row items-center px-4 py-3">
+            <Feather name="shopping-cart" size={24} color="#000" />
+            <Text className="flex-1 ml-4 text-base font-inter-semibold text-black">My Cart</Text>
             <Feather name="chevron-right" size={16} color="#000" />
           </Pressable>
 

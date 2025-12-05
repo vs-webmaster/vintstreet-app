@@ -1,9 +1,10 @@
-import { attributesService, brandsService, listingsService, storageService } from '@/api';
+import { attributesService, brandsService, listingsService, storageService } from '@/api/services';
 import { CategoryAttributesCard } from '@/components/category-attributes-card';
 import { DropdownComponent, InputComponent } from '@/components/common';
 import { useAuth } from '@/hooks/use-auth';
 import { styles } from '@/styles';
 import { AuthUtils } from '@/utils/auth-utils';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast, showWarningToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -34,12 +35,11 @@ const ITEM_TYPE_OPTIONS = [
 
 export default function SellScreen() {
   const { productId } = useLocalSearchParams<{ productId?: string }>();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
-  const [brand, setBrand] = useState('');
   const [category, setCategory] = useState('');
   const [itemType, setItemType] = useState('single');
   const [enableOffers, setEnableOffers] = useState(true);
@@ -69,8 +69,8 @@ export default function SellScreen() {
   const [currentCategoryLevel, setCurrentCategoryLevel] = useState<
     'category' | 'subcategory' | 'subSubcategory' | 'subSubSubcategory'
   >('category');
-  const [dynamicAttributes, setDynamicAttributes] = useState<Record<string, any>>({});
-  const [attributes, setAttributes] = useState<any[]>([]);
+  const [dynamicAttributes, setDynamicAttributes] = useState<Record<string, unknown>>({});
+  const [attributes, setAttributes] = useState<unknown[]>([]);
   const [productImages, setProductImages] = useState<
     Array<{ key: string; uri: string; uploadedUrl?: string; isPrimary: boolean }>
   >([]);
@@ -81,12 +81,6 @@ export default function SellScreen() {
   const [isMarketplaceListing, setIsMarketplaceListing] = useState(true);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
-  const itemTypeOptions = [
-    { key: 'single', label: 'Single Item' },
-    { key: 'multi', label: 'Multi Item (with quantity)' },
-  ];
-
-  // Load categories and brands on component mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -97,7 +91,7 @@ export default function SellScreen() {
         setCategories(categoriesData);
         setBrands(brandsData);
       } catch (error) {
-        console.error('Error loading categories and brands:', error);
+        logger.error('Error loading categories and brands:', error);
       }
     };
 
@@ -148,10 +142,6 @@ export default function SellScreen() {
         // Set brand
         if (product.brand_id) {
           setSelectedBrandId(product.brand_id);
-          const brandData = brands.find((b) => b.id === product.brand_id);
-          if (brandData) {
-            setBrand(brandData.name);
-          }
         }
 
         // Set categories
@@ -184,7 +174,7 @@ export default function SellScreen() {
           }
         }
       } catch (error) {
-        console.error('Error loading product data:', error);
+        logger.error('Error loading product data:', error);
         showErrorToast('Failed to load product data');
       }
     };
@@ -201,7 +191,7 @@ export default function SellScreen() {
       const subcategoriesData = await listingsService.getSubcategories(categoryId);
       setSubcategories(subcategoriesData);
     } catch (error) {
-      console.error('Error loading subcategories:', error);
+      logger.error('Error loading subcategories:', error);
     }
   };
 
@@ -211,7 +201,7 @@ export default function SellScreen() {
       const subSubcategoriesData = await listingsService.getSubSubcategories(subcategoryId);
       setSubSubcategories(subSubcategoriesData);
     } catch (error) {
-      console.error('Error loading sub-subcategories:', error);
+      logger.error('Error loading sub-subcategories:', error);
     }
   };
 
@@ -221,7 +211,7 @@ export default function SellScreen() {
       const subSubSubcategoriesData = await listingsService.getSubSubSubcategories(subSubcategoryId);
       setSubSubSubcategories(subSubSubcategoriesData);
     } catch (error) {
-      console.error('Error loading sub-sub-subcategories:', error);
+      logger.error('Error loading sub-sub-subcategories:', error);
     }
   };
 
@@ -231,26 +221,13 @@ export default function SellScreen() {
       const attributesData = await attributesService.getAttributes(subcategoryId, subSubcategoryId);
       setAttributes(attributesData);
     } catch (error) {
-      console.error('Error loading attributes:', error);
+      logger.error('Error loading attributes:', error);
       setAttributes([]);
     }
   };
 
-  // Reset category modal state
-  const resetCategoryModal = () => {
-    setCurrentCategoryLevel('category');
-    setSubcategories([]);
-    setSubSubcategories([]);
-    setSubSubSubcategories([]);
-    setSelectedSubcategoryId('');
-    setSelectedSubSubcategoryId('');
-    setSelectedSubSubSubcategoryId('');
-    setAttributes([]);
-    setDynamicAttributes({});
-  };
-
   // Handle dynamic attribute changes
-  const handleAttributeChange = (attributeId: string, value: any) => {
+  const handleAttributeChange = (attributeId: string, value: unknown) => {
     setDynamicAttributes((prev) => ({
       ...prev,
       [attributeId]: value,
@@ -331,10 +308,8 @@ export default function SellScreen() {
           isPrimary: productImages.length === 0 && index === 0, // First image is primary if no images exist
         }));
 
-        console.log('Adding new images:', newImageData);
         setProductImages((prev) => {
           const updated = [...prev, ...newImageData];
-          console.log('Total images now:', updated.length);
           return updated;
         });
         setShowImagePickerModal(false);
@@ -343,7 +318,7 @@ export default function SellScreen() {
         await uploadImagesToStorage(newImageData);
       }
     } catch (error) {
-      console.error('Error picking images:', error);
+      logger.error('Error picking images:', error);
       showErrorToast('Failed to pick images from gallery. Please try again.');
     }
   };
@@ -393,7 +368,7 @@ export default function SellScreen() {
         await uploadImagesToStorage(newImageData);
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
+      logger.error('Error taking photo:', error);
       showErrorToast('Failed to take photo. Please try again.');
     }
   };
@@ -412,7 +387,10 @@ export default function SellScreen() {
         },
         {
           text: 'Log In',
-          onPress: () => router.replace('/(auth)'),
+          onPress: () => {
+            const currentPath = productId ? `/(tabs)/sell?productId=${productId}` : '/(tabs)/sell';
+            router.replace(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
+          },
         },
       ]);
       return;
@@ -447,7 +425,8 @@ export default function SellScreen() {
               onPress: () => {
                 setIsUploadingImages(false);
                 // Navigate to login screen
-                router.replace('/(auth)');
+                const currentPath = productId ? `/(tabs)/sell?productId=${productId}` : '/(tabs)/sell';
+                router.replace(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
               },
             },
           ]
@@ -477,7 +456,7 @@ export default function SellScreen() {
           const progress = Math.round(((i + 1) / imageData.length) * 100);
           setUploadProgress(progress);
         } catch (error) {
-          console.error(`Error uploading image ${i + 1}:`, error);
+          logger.error(`Error uploading image ${i + 1}:`, error);
           errors.push(`Image ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
@@ -494,7 +473,7 @@ export default function SellScreen() {
         showErrorToast('All uploads failed. Please try again.');
       }
     } catch (error) {
-      console.error('Upload error:', error);
+      logger.error('Upload error:', error);
       showErrorToast('Failed to upload images. Please check your internet connection.');
     } finally {
       setIsUploadingImages(false);
@@ -525,7 +504,7 @@ export default function SellScreen() {
       try {
         await storageService.deleteImage(imageToRemove.uploadedUrl);
       } catch (error) {
-        console.error('Error deleting image from storage:', error);
+        logger.error('Error deleting image from storage:', error);
         // Don't show error to user as the image is already removed from UI
       }
     }
@@ -564,7 +543,8 @@ export default function SellScreen() {
               text: 'Log In',
               onPress: () => {
                 setIsSavingDraft(false);
-                router.replace('/(auth)');
+                const currentPath = productId ? `/(tabs)/sell?productId=${productId}` : '/(tabs)/sell';
+                router.replace(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
               },
             },
           ]
@@ -612,7 +592,7 @@ export default function SellScreen() {
         showSuccessToast('Draft saved successfully!');
       }
 
-      // Save dynamic attributes if any
+      // Save dynamic attributes if unknown
       if (Object.keys(dynamicAttributes).length > 0) {
         await attributesService.saveAttributeValues(product.id, dynamicAttributes);
       }
@@ -622,7 +602,6 @@ export default function SellScreen() {
       setDescription('');
       setPrice('');
       setSalePrice('');
-      setBrand('');
       setCategory('');
       setItemType('single');
       setEnableOffers(true);
@@ -641,7 +620,7 @@ export default function SellScreen() {
       setCurrentCategoryLevel('category');
       setIsMarketplaceListing(true);
     } catch (error) {
-      console.error('Error saving draft:', error);
+      logger.error('Error saving draft:', error);
       showErrorToast('Failed to save draft. Please try again.');
     } finally {
       setIsSavingDraft(false);
@@ -680,7 +659,8 @@ export default function SellScreen() {
               text: 'Log In',
               onPress: () => {
                 setIsPublishing(false);
-                router.replace('/(auth)');
+                const currentPath = productId ? `/(tabs)/sell?productId=${productId}` : '/(tabs)/sell';
+                router.replace(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
               },
             },
           ]
@@ -734,7 +714,7 @@ export default function SellScreen() {
         showSuccessToast(message);
       }
 
-      // Save dynamic attributes if any
+      // Save dynamic attributes if unknown
       if (Object.keys(dynamicAttributes).length > 0) {
         await attributesService.saveAttributeValues(product.id, dynamicAttributes);
       }
@@ -744,7 +724,6 @@ export default function SellScreen() {
       setDescription('');
       setPrice('');
       setSalePrice('');
-      setBrand('');
       setCategory('');
       setItemType('single');
       setEnableOffers(true);
@@ -763,12 +742,50 @@ export default function SellScreen() {
       setCurrentCategoryLevel('category');
       setIsMarketplaceListing(true);
     } catch (error) {
-      console.error('Error publishing product:', error);
+      logger.error('Error publishing product:', error);
       showErrorToast('Failed to publish product. Please try again.');
     } finally {
       setIsPublishing(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          <View className="flex-1 items-center justify-center px-6 py-12">
+            <View className="items-center mb-8">
+              <View className="w-24 h-24 items-center justify-center mb-6 rounded-full bg-gray-100">
+                <Feather name="shopping-bag" size={48} color="#9CA3AF" />
+              </View>
+              <Text className="text-base font-inter-semibold text-gray-500 text-center max-w-sm">
+                Please sign in to list and sell your products
+              </Text>
+            </View>
+
+            <View className="w-full max-w-sm gap-4">
+              <Pressable
+                onPress={() => {
+                  const currentPath = productId ? `/(tabs)/sell?productId=${productId}` : '/(tabs)/sell';
+                  router.push(`/(auth)?redirect=${encodeURIComponent(currentPath)}`);
+                }}
+                className="w-full h-14 items-center justify-center rounded-lg bg-black"
+              >
+                <Text className="text-base font-inter-bold text-white">Sign In</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/(auth)/register')}
+                className="w-full h-14 items-center justify-center rounded-lg border-2 border-gray-300 bg-white"
+              >
+                <Text className="text-base font-inter-bold text-black">Create Account</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   // Check if user is a buyer and show seller setup message
   if (user?.user_type === 'buyer') {
@@ -969,7 +986,7 @@ export default function SellScreen() {
                       data={productImages}
                       itemHeight={(Dimensions.get('window').width - 48) / 3}
                       delayLongPress={150}
-                      renderItem={(item: any) => {
+                      renderItem={(item: unknown) => {
                         const isUploaded = !!item.uploadedUrl;
                         const isUploading = isUploadingImages && !isUploaded;
 
@@ -999,11 +1016,11 @@ export default function SellScreen() {
                                 }}
                                 resizeMode="cover"
                                 onError={(error) => {
-                                  console.log('Image load error:', error.nativeEvent.error);
-                                  console.log('Image URI:', item.uri);
+                                  logger.error('Image load error:', error.nativeEvent.error);
+                                  logger.error('Image URI:', item.uri);
                                 }}
                                 onLoad={() => {
-                                  console.log('Image loaded successfully:', item.key);
+                                  logger.info('Image loaded successfully:', item.key);
                                 }}
                               />
 
@@ -1118,9 +1135,9 @@ export default function SellScreen() {
                           </View>
                         );
                       }}
-                      onDragRelease={(data: any) => {
+                      onDragRelease={(data: unknown) => {
                         // After reordering, automatically set the first image as primary/cover
-                        const reorderedImages = data.map((img: any, index: number) => ({
+                        const reorderedImages = data.map((img: unknown, index: number) => ({
                           ...img,
                           isPrimary: index === 0,
                         }));
@@ -1367,16 +1384,12 @@ export default function SellScreen() {
           style={styles.container}
         >
           <View className="flex-1 justify-end bg-black/50">
-            <View className="max-h-4/5 rounded-t-2xl bg-white">
+            <SafeAreaView edges={['bottom']} className="w-full rounded-t-2xl bg-white">
               {/* Header */}
               <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
                 <Text className="text-lg font-inter-bold text-black">Select Brand</Text>
-                <TouchableOpacity
-                  onPress={() => setShowBrandModal(false)}
-                  hitSlop={8}
-                  className="items-center justify-center"
-                >
-                  <Feather name="x" size={20} color="#000" />
+                <TouchableOpacity onPress={() => setShowBrandModal(false)} hitSlop={8}>
+                  <Feather name="x" size={24} color="#000" />
                 </TouchableOpacity>
               </View>
 
@@ -1391,10 +1404,10 @@ export default function SellScreen() {
               </View>
 
               {/* Brand List */}
-              <ScrollView showsVerticalScrollIndicator={false} className="max-h-80">
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <View className="px-4">
                   {filteredBrands.length === 0 ? (
-                    <View className="items-center justify-center py-8">
+                    <View className="items-center justify-center p-8">
                       <Text className="text-sm font-inter-semibold text-gray-500">No brands found</Text>
                     </View>
                   ) : (
@@ -1403,19 +1416,18 @@ export default function SellScreen() {
                         key={brand.id}
                         onPress={() => {
                           setSelectedBrandId(brand.id);
-                          setBrand(brand.name);
                           setShowBrandModal(false);
                           setBrandSearchQuery('');
                         }}
-                        className={`flex-row items-center justify-between px-3 py-3 rounded-lg ${
+                        className={`flex-row items-center justify-between p-4 rounded-lg ${
                           selectedBrandId === brand.id ? 'bg-gray-100' : 'bg-transparent'
                         }`}
                       >
-                        <View className="flex-1 flex-row items-center">
+                        <View className="flex-1 flex-row items-center gap-4">
                           {brand.logo_url && (
-                            <Image source={{ uri: brand.logo_url }} className="w-6 h-6 mr-3" resizeMode="contain" />
+                            <Image source={{ uri: brand.logo_url }} className="w-6 h-6" resizeMode="contain" />
                           )}
-                          <Text className="text-sm font-inter-semibold text-black flex-1">{brand.name}</Text>
+                          <Text className="flex-1 text-sm font-inter-semibold text-black">{brand.name}</Text>
                         </View>
                         {selectedBrandId === brand.id && <Feather name="check" size={16} color="#000" />}
                       </TouchableOpacity>
@@ -1430,17 +1442,16 @@ export default function SellScreen() {
                   <TouchableOpacity
                     onPress={() => {
                       setSelectedBrandId('');
-                      setBrand('');
                       setBrandSearchQuery('');
                       setShowBrandModal(false);
                     }}
-                    className="items-center justify-center py-3 px-4 rounded-lg bg-gray-200"
+                    className="items-center justify-center p-4 rounded-lg bg-gray-200"
                   >
                     <Text className="text-sm font-inter-semibold text-black">Clear Selection</Text>
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
+            </SafeAreaView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1449,11 +1460,11 @@ export default function SellScreen() {
       <Modal
         visible={showCategoryModal}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowCategoryModal(false)}
       >
-        <View className="flex-1 justify-end bg-black/50">
-          <View className="max-h-4/5 rounded-t-2xl bg-white">
+        <View className="flex-1 items-center justify-center p-4 bg-black/50">
+          <View className="w-full h-3/5 rounded-2xl bg-white">
             {/* Header */}
             <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
               <View className="flex-row items-center gap-3">
@@ -1486,141 +1497,137 @@ export default function SellScreen() {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                onPress={() => setShowCategoryModal(false)}
-                hitSlop={8}
-                className="items-center justify-center"
-              >
-                <Feather name="x" size={20} color="#000" />
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)} hitSlop={8}>
+                <Feather name="x" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} className="max-h-80">
-              <View className="px-4">
-                {currentCategoryLevel === 'category' &&
-                  (categories.length === 0 ? (
-                    <View className="items-center justify-center py-8">
-                      <Text className="text-sm font-inter-semibold text-gray-500">No categories available</Text>
-                    </View>
-                  ) : (
-                    categories.map((category) => (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+              {currentCategoryLevel === 'category' &&
+                (categories.length === 0 ? (
+                  <View className="items-center justify-center p-8">
+                    <Text className="text-sm font-inter-semibold text-gray-500">No categories available</Text>
+                  </View>
+                ) : (
+                  categories.map((category) => (
+                    <View key={category.id} className="border-b border-gray-200">
                       <TouchableOpacity
-                        key={category.id}
                         onPress={async () => {
                           setSelectedCategoryId(category.id);
                           setCategory(category.name);
                           await loadSubcategories(category.id);
                           setCurrentCategoryLevel('subcategory');
                         }}
-                        className="flex-row items-center justify-between py-3"
+                        className="flex-row items-center justify-between p-4"
                       >
                         <Text className="text-base font-inter-semibold text-black">{category.name}</Text>
                         <Feather name="chevron-right" size={16} color="#999" />
                       </TouchableOpacity>
-                    ))
-                  ))}
-
-                {currentCategoryLevel === 'subcategory' &&
-                  (subcategories.length === 0 ? (
-                    <View className="items-center justify-center py-8 gap-4">
-                      <Text className="text-sm font-inter-semibold text-gray-500">No subcategories available</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setCurrentCategoryLevel('subSubcategory');
-                        }}
-                        className="px-6 py-3 rounded-lg bg-black"
-                      >
-                        <Text className="text-base font-inter-semibold text-white">
-                          Continue with {categories.find((c) => c.id === selectedCategoryId)?.name || 'Category'}
-                        </Text>
-                      </TouchableOpacity>
                     </View>
-                  ) : (
-                    subcategories.map((subcategory) => (
+                  ))
+                ))}
+
+              {currentCategoryLevel === 'subcategory' &&
+                (subcategories.length === 0 ? (
+                  <View className="items-center justify-center p-8 gap-4">
+                    <Text className="text-sm font-inter-semibold text-gray-500">No subcategories available</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCurrentCategoryLevel('subSubcategory');
+                      }}
+                      className="px-6 py-3 rounded-lg bg-black"
+                    >
+                      <Text className="text-base font-inter-semibold text-white">
+                        Continue with {categories.find((c) => c.id === selectedCategoryId)?.name || 'Category'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  subcategories.map((subcategory) => (
+                    <View key={subcategory.id} className="border-b border-gray-200">
                       <TouchableOpacity
-                        key={subcategory.id}
                         onPress={async () => {
                           setSelectedSubcategoryId(subcategory.id);
                           await loadSubSubcategories(subcategory.id);
                           await loadAttributes(subcategory.id);
                           setCurrentCategoryLevel('subSubcategory');
                         }}
-                        className="flex-row items-center justify-between py-3"
+                        className="flex-row items-center justify-between p-4"
                       >
                         <Text className="text-base font-inter-semibold text-black">{subcategory.name}</Text>
                         <Feather name="chevron-right" size={16} color="#999" />
                       </TouchableOpacity>
-                    ))
-                  ))}
-
-                {currentCategoryLevel === 'subSubcategory' &&
-                  (subSubcategories.length === 0 ? (
-                    <View className="items-center justify-center py-8 gap-4">
-                      <Text className="text-sm font-inter-semibold text-gray-500">No types available</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setCurrentCategoryLevel('subSubSubcategory');
-                        }}
-                        className="px-6 py-3 rounded-lg bg-black"
-                      >
-                        <Text className="text-base font-inter-semibold text-white">
-                          Continue with{' '}
-                          {subcategories.find((s) => s.id === selectedSubcategoryId)?.name || 'Subcategory'}
-                        </Text>
-                      </TouchableOpacity>
                     </View>
-                  ) : (
-                    subSubcategories.map((subSubcategory) => (
+                  ))
+                ))}
+
+              {currentCategoryLevel === 'subSubcategory' &&
+                (subSubcategories.length === 0 ? (
+                  <View className="items-center justify-center p-8 gap-4">
+                    <Text className="text-sm font-inter-semibold text-gray-500">No types available</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCurrentCategoryLevel('subSubSubcategory');
+                      }}
+                      className="px-6 py-3 rounded-lg bg-black"
+                    >
+                      <Text className="text-base font-inter-semibold text-white">
+                        Continue with {subcategories.find((s) => s.id === selectedSubcategoryId)?.name || 'Subcategory'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  subSubcategories.map((subSubcategory) => (
+                    <View key={subSubcategory.id} className="border-b border-gray-200">
                       <TouchableOpacity
-                        key={subSubcategory.id}
                         onPress={async () => {
                           setSelectedSubSubcategoryId(subSubcategory.id);
                           await loadSubSubSubcategories(subSubcategory.id);
                           await loadAttributes(selectedSubcategoryId, subSubcategory.id);
                           setCurrentCategoryLevel('subSubSubcategory');
                         }}
-                        className="flex-row items-center justify-between py-3"
+                        className="flex-row items-center justify-between p-4"
                       >
                         <Text className="text-base font-inter-semibold text-black">{subSubcategory.name}</Text>
                         <Feather name="chevron-right" size={16} color="#999" />
                       </TouchableOpacity>
-                    ))
-                  ))}
-
-                {currentCategoryLevel === 'subSubSubcategory' &&
-                  (subSubSubcategories.length === 0 ? (
-                    <View className="items-center justify-center py-8 gap-4">
-                      <Text className="text-sm font-inter-semibold text-gray-500">No specific types available</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setShowCategoryModal(false);
-                        }}
-                        className="px-6 py-3 rounded-lg bg-black"
-                      >
-                        <Text className="text-base font-inter-semibold text-white">
-                          Use{' '}
-                          {subSubcategories.find((s) => s.id === selectedSubSubcategoryId)?.name || 'Sub-subcategory'}
-                        </Text>
-                      </TouchableOpacity>
                     </View>
-                  ) : (
-                    subSubSubcategories.map((subSubSubcategory) => (
+                  ))
+                ))}
+
+              {currentCategoryLevel === 'subSubSubcategory' &&
+                (subSubSubcategories.length === 0 ? (
+                  <View className="items-center justify-center p-8 gap-4">
+                    <Text className="text-sm font-inter-semibold text-gray-500">No specific types available</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowCategoryModal(false);
+                      }}
+                      className="px-6 py-3 rounded-lg bg-black"
+                    >
+                      <Text className="text-base font-inter-semibold text-white">
+                        Use {subSubcategories.find((s) => s.id === selectedSubSubcategoryId)?.name || 'Sub-subcategory'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  subSubSubcategories.map((subSubSubcategory) => (
+                    <View key={subSubSubcategory.id} className="border-b border-gray-200">
                       <TouchableOpacity
-                        key={subSubSubcategory.id}
                         onPress={() => {
                           setSelectedSubSubSubcategoryId(subSubSubcategory.id);
                           setShowCategoryModal(false);
                         }}
-                        className="flex-row items-center justify-between py-3"
+                        className="flex-row items-center justify-between p-4"
                       >
                         <Text className="text-base font-inter-semibold text-black">{subSubSubcategory.name}</Text>
                         {selectedSubSubSubcategoryId === subSubSubcategory.id && (
                           <Feather name="check" size={16} color="#999" />
                         )}
                       </TouchableOpacity>
-                    ))
-                  ))}
-              </View>
+                    </View>
+                  ))
+                ))}
             </ScrollView>
           </View>
         </View>
@@ -1633,16 +1640,13 @@ export default function SellScreen() {
         animationType="slide"
         onRequestClose={() => setShowImagePickerModal(false)}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="rounded-t-2xl bg-white">
+        <View className="flex-1 justify-end bg-black/50">
+          <SafeAreaView edges={['bottom']} className="rounded-t-2xl bg-white">
             {/* Header */}
             <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
               <Text className="text-lg font-inter-bold text-black">Add Product Images</Text>
-              <TouchableOpacity
-                onPress={() => setShowImagePickerModal(false)}
-                className="items-center justify-center w-6 h-6"
-              >
-                <Feather name="x" size={20} color="#000" />
+              <TouchableOpacity onPress={() => setShowImagePickerModal(false)} hitSlop={8}>
+                <Feather name="x" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
@@ -1697,7 +1701,7 @@ export default function SellScreen() {
                 <Feather name="chevron-right" size={20} color="#999" />
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>

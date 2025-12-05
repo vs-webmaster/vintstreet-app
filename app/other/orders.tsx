@@ -1,7 +1,9 @@
-import { Order, ordersService } from '@/api';
+import { ordersService } from '@/api/services';
+import { Order } from '@/api/types';
 import { ContactModal } from '@/components/contact-modal';
 import { useAuth } from '@/hooks/use-auth';
 import { blurhash } from '@/utils';
+import { logger } from '@/utils/logger';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
@@ -47,7 +49,7 @@ export default function OrdersScreen() {
       const fetchedOrders = await ordersService.getOrders(user.id, 'buyer');
       setOrders(fetchedOrders);
     } catch (err) {
-      console.error('Error loading orders:', err);
+      logger.error('Error loading orders', err);
       setError(err instanceof Error ? err.message : 'Error loading orders');
     } finally {
       setIsLoading(false);
@@ -210,13 +212,13 @@ export default function OrdersScreen() {
         {isLoading ? (
           <View className="flex-1 items-center justify-center p-4">
             <ActivityIndicator size="large" color="#000" />
-            <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading your orders...</Text>
+            <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading your orders...</Text>
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center p-4">
             <Feather name="alert-circle" color="#ff4444" size={64} />
-            <Text className="my-4 text-lg font-inter-bold text-red-500">Error loading orders</Text>
-            <TouchableOpacity onPress={loadOrders} className="bg-black rounded-lg py-3 px-6">
+            <Text className="mt-2 mb-4 text-lg font-inter-bold text-red-500">Error loading orders</Text>
+            <TouchableOpacity onPress={loadOrders} className="px-6 py-3 rounded-lg bg-black">
               <Text className="text-base font-inter-bold text-white">Retry</Text>
             </TouchableOpacity>
           </View>

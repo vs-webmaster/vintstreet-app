@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 import { supabase } from '../config/supabase';
 import { InfiniteQueryResult, ListingsFilters, Product } from '../types';
 
@@ -23,10 +24,7 @@ class ListingsService {
 
       // Apply search filter to count query
       if (filters.searchKeyword && filters.searchKeyword.trim()) {
-        const escaped = filters.searchKeyword
-          .trim()
-          .replace(/\\/g, "\\\\")
-          .replace(/\"/g, '\\"');
+        const escaped = filters.searchKeyword.trim().replace(/\\/g, '\\\\').replace(/\"/g, '\\"');
         const searchPattern = `%${escaped}%`;
         countQuery = countQuery.or(
           `product_name.ilike."${searchPattern}",product_description.ilike."${searchPattern}"`
@@ -72,6 +70,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -82,14 +81,9 @@ class ListingsService {
 
       // Apply search filter
       if (filters.searchKeyword && filters.searchKeyword.trim()) {
-        const escaped = filters.searchKeyword
-          .trim()
-          .replace(/\\/g, "\\\\")
-          .replace(/\"/g, '\\"');
+        const escaped = filters.searchKeyword.trim().replace(/\\/g, '\\\\').replace(/\"/g, '\\"');
         const searchPattern = `%${escaped}%`;
-        query = query.or(
-          `product_name.ilike."${searchPattern}",product_description.ilike."${searchPattern}"`
-        );
+        query = query.or(`product_name.ilike."${searchPattern}",product_description.ilike."${searchPattern}"`);
       }
 
       // Apply server-side filters
@@ -115,12 +109,12 @@ class ListingsService {
       if (error) throw error;
 
       // Optimized: Fetch seller info using the new view (single query instead of 2)
-      const sellerIds = [...new Set((data || []).map((p: any) => p.seller_id))];
+      const sellerIds = [...new Set((data || []).map((p: unknown) => p.seller_id))];
       const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
 
-      const sellersMap = new Map((sellers || []).map((s: any) => [s.user_id, s]));
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
 
-      const productsWithSellers = (data || []).map((product: any) => ({
+      const productsWithSellers = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: sellersMap.get(product.seller_id) || null,
       })) as Product[];
@@ -131,7 +125,7 @@ class ListingsService {
         total: count || 0,
       };
     } catch (error) {
-      console.error('Error fetching listings infinite:', error);
+      logger.error('Error fetching listings infinite:', error);
       throw error;
     }
   }
@@ -159,6 +153,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -173,19 +168,19 @@ class ListingsService {
       }
 
       // Optimized: Fetch seller info using the new view (single query instead of 2)
-      const sellerIds = [...new Set((data || []).map((p: any) => p.seller_id))];
+      const sellerIds = [...new Set((data || []).map((p: unknown) => p.seller_id))];
       const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
 
-      const sellersMap = new Map((sellers || []).map((s: any) => [s.user_id, s]));
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
 
-      const productsWithSellers = (data || []).map((product: any) => ({
+      const productsWithSellers = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: sellersMap.get(product.seller_id) || null,
       })) as Product[];
 
       return productsWithSellers;
     } catch (error) {
-      console.error('Error fetching listings:', error);
+      logger.error('Error fetching listings:', error);
       throw error;
     }
   }
@@ -202,10 +197,10 @@ class ListingsService {
   ): Promise<Product[]> {
     const tryQuery = async (column: string, value: string | number) => {
       try {
-        let query = (supabase as any)
+        let query = (supabase as unknown)
           .from('listings')
           .select('*')
-          .eq(column as any, value)
+          .eq(column as unknown, value)
           .eq('product_type', 'shop')
           .eq('status', 'published');
 
@@ -230,11 +225,11 @@ class ListingsService {
         const { data, error } = await query;
         if (error) {
           // Skip unknown column or other errors silently; we'll try the next option
-          return [] as any[];
+          return [] as unknown[];
         }
-        return (data as any[]) || [];
+        return (data as unknown[]) || [];
       } catch (_) {
-        return [] as any[];
+        return [] as unknown[];
       }
     };
 
@@ -254,12 +249,12 @@ class ListingsService {
           switch (sort) {
             case 'price:asc':
               items.sort(
-                (a: any, b: any) => (a.current_bid || a.starting_price || 0) - (b.current_bid || b.starting_price || 0)
+                (a: unknown, b: unknown) => (a.current_bid || a.starting_price || 0) - (b.current_bid || b.starting_price || 0)
               );
               break;
             case 'price:desc':
               items.sort(
-                (a: any, b: any) => (b.current_bid || b.starting_price || 0) - (a.current_bid || a.starting_price || 0)
+                (a: unknown, b: unknown) => (b.current_bid || b.starting_price || 0) - (a.current_bid || a.starting_price || 0)
               );
               break;
             default:
@@ -270,7 +265,7 @@ class ListingsService {
       }
     }
 
-    // No results from any attempt
+    // No results from unknown attempt
     return [];
   }
 
@@ -298,6 +293,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -313,14 +309,14 @@ class ListingsService {
       // Optimized: Fetch seller info using the new view (single query instead of 2)
       const { data: seller } = await supabase.from('seller_info_view').select('*').eq('user_id', sellerId).single();
 
-      const productsWithSeller = (data || []).map((product: any) => ({
+      const productsWithSeller = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: seller || null,
       })) as Product[];
 
       return productsWithSeller;
     } catch (error) {
-      console.error('Error fetching seller listings:', error);
+      logger.error('Error fetching seller listings:', error);
       throw error;
     }
   }
@@ -363,6 +359,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -380,7 +377,7 @@ class ListingsService {
       // Optimized: Fetch seller info using the new view (single query instead of 2)
       const { data: seller } = await supabase.from('seller_info_view').select('*').eq('user_id', sellerId).single();
 
-      const productsWithSeller = (data || []).map((product: any) => ({
+      const productsWithSeller = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: seller || null,
       })) as Product[];
@@ -391,7 +388,7 @@ class ListingsService {
         total: count || 0,
       };
     } catch (error) {
-      console.error('Error fetching seller listings infinite:', error);
+      logger.error('Error fetching seller listings infinite:', error);
       throw error;
     }
   }
@@ -418,6 +415,7 @@ class ListingsService {
           sub_subcategory_id,
           sub_sub_subcategory_id,
           brand_id,
+          auction_type,
           status,
           created_at,
           stock_quantity,
@@ -441,17 +439,17 @@ class ListingsService {
       const { data: seller } = await supabase
         .from('seller_info_view')
         .select('*')
-        .eq('user_id', (data as any).seller_id)
+        .eq('user_id', (data as unknown).seller_id)
         .single();
 
       const productWithSeller = {
-        ...(data as any),
+        ...(data as unknown),
         seller_info_view: seller || null,
       } as Product;
 
       return productWithSeller;
     } catch (error) {
-      console.error('Error fetching listing by id:', error);
+      logger.error('Error fetching listing by id:', error);
       throw error;
     }
   }
@@ -481,6 +479,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -507,14 +506,14 @@ class ListingsService {
       // Optimized: Fetch seller info using the new view (single query instead of 2)
       const { data: seller } = await supabase.from('seller_info_view').select('*').eq('user_id', sellerId).single();
 
-      const productsWithSeller = (data || []).map((product: any) => ({
+      const productsWithSeller = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: seller || null,
       })) as Product[];
 
       return productsWithSeller;
     } catch (error) {
-      console.error('Error fetching listings by status:', error);
+      logger.error('Error fetching listings by status:', error);
       throw error;
     }
   }
@@ -532,7 +531,7 @@ class ListingsService {
         throw new Error(`Failed to update listing status: ${error.message}`);
       }
     } catch (error) {
-      console.error('Error updating listing status:', error);
+      logger.error('Error updating listing status:', error);
       throw error;
     }
   }
@@ -563,6 +562,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -570,13 +570,7 @@ class ListingsService {
         )
         .eq('product_type', 'shop')
         .eq('status', 'published')
-        .or(() => {
-          const escaped = searchTerm
-            .trim()
-            .replace(/\\/g, "\\\\")
-            .replace(/\"/g, '\\"');
-          return `product_name.ilike."%${escaped}%",product_description.ilike."%${escaped}%"`;
-        });
+        .or(`product_name.ilike."%${searchTerm.trim()}%",product_description.ilike."%${searchTerm.trim()}%"`);
 
       // Apply price filter if provided
       if (priceFilter && priceFilter !== 'All Prices') {
@@ -603,19 +597,19 @@ class ListingsService {
       }
 
       // Optimized: Fetch seller info using the new view (single query instead of 2)
-      const sellerIds = [...new Set((data || []).map((p: any) => p.seller_id))];
+      const sellerIds = [...new Set((data || []).map((p: unknown) => p.seller_id))];
       const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
 
-      const sellersMap = new Map((sellers || []).map((s: any) => [s.user_id, s]));
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
 
-      const productsWithSellers = (data || []).map((product: any) => ({
+      const productsWithSellers = (data || []).map((product: unknown) => ({
         ...product,
         seller_info_view: sellersMap.get(product.seller_id) || null,
       })) as Product[];
 
       return productsWithSellers;
     } catch (error) {
-      console.error('Error searching listings:', error);
+      logger.error('Error searching listings:', error);
       throw error;
     }
   }
@@ -640,6 +634,7 @@ class ListingsService {
     sub_subcategory_id?: string | null;
     sub_sub_subcategory_id?: string | null;
     stock_quantity?: number | null;
+    auction_type?: 'marketplace' | 'timed';
     status?: 'draft' | 'published' | 'private';
     moderation_status?: string;
     moderation_reason?: string | null;
@@ -663,6 +658,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -678,17 +674,17 @@ class ListingsService {
       const { data: seller } = await supabase
         .from('seller_info_view')
         .select('*')
-        .eq('user_id', (data as any).seller_id)
+        .eq('user_id', (data as unknown).seller_id)
         .single();
 
       const productWithSeller = {
-        ...(data as any),
+        ...(data as unknown),
         seller_info_view: seller || null,
       } as Product;
 
       return productWithSeller;
     } catch (error) {
-      console.error('Error creating product:', error);
+      logger.error('Error creating product:', error);
       throw error;
     }
   }
@@ -713,6 +709,7 @@ class ListingsService {
       sub_subcategory_id?: string | null;
       sub_sub_subcategory_id?: string | null;
       stock_quantity?: number | null;
+      auction_type?: 'marketplace' | 'timed';
       status?: 'draft' | 'published' | 'private';
       moderation_status?: string;
       moderation_reason?: string | null;
@@ -738,6 +735,7 @@ class ListingsService {
           sub_sub_subcategory_id,
           brand_id,
           stock_quantity,
+          auction_type,
           status,
           created_at,
           product_categories(id, name)
@@ -753,17 +751,17 @@ class ListingsService {
       const { data: seller } = await supabase
         .from('seller_info_view')
         .select('*')
-        .eq('user_id', (data as any).seller_id)
+        .eq('user_id', (data as unknown).seller_id)
         .single();
 
       const productWithSeller = {
-        ...(data as any),
+        ...(data as unknown),
         seller_info_view: seller || null,
       } as Product;
 
       return productWithSeller;
     } catch (error) {
-      console.error('Error updating product:', error);
+      logger.error('Error updating product:', error);
       throw error;
     }
   }
@@ -780,7 +778,7 @@ class ListingsService {
         throw new Error(`Failed to delete product: ${error.message}`);
       }
     } catch (error) {
-      console.error('Error deleting product:', error);
+      logger.error('Error deleting product:', error);
       throw error;
     }
   }
@@ -800,9 +798,9 @@ class ListingsService {
         throw new Error(`Failed to fetch product categories: ${error.message}`);
       }
 
-      return (data as any) || [];
+      return (data as unknown) || [];
     } catch (error) {
-      console.error('Error fetching product categories:', error);
+      logger.error('Error fetching product categories:', error);
       throw error;
     }
   }
@@ -824,9 +822,9 @@ class ListingsService {
         throw new Error(`Failed to fetch subcategories: ${error.message}`);
       }
 
-      return (data as any) || [];
+      return (data as unknown) || [];
     } catch (error) {
-      console.error('Error fetching subcategories:', error);
+      logger.error('Error fetching subcategories:', error);
       throw error;
     }
   }
@@ -850,9 +848,9 @@ class ListingsService {
         throw new Error(`Failed to fetch sub-subcategories: ${error.message}`);
       }
 
-      return (data as any) || [];
+      return (data as unknown) || [];
     } catch (error) {
-      console.error('Error fetching sub-subcategories:', error);
+      logger.error('Error fetching sub-subcategories:', error);
       throw error;
     }
   }
@@ -876,9 +874,9 @@ class ListingsService {
         throw new Error(`Failed to fetch sub-sub-subcategories: ${error.message}`);
       }
 
-      return (data as any) || [];
+      return (data as unknown) || [];
     } catch (error) {
-      console.error('Error fetching sub-sub-subcategories:', error);
+      logger.error('Error fetching sub-sub-subcategories:', error);
       throw error;
     }
   }
@@ -928,13 +926,13 @@ class ListingsService {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching available brands:', error);
+        logger.error('Error fetching available brands:', error);
         return [];
       }
 
       // Extract unique brands and count products per brand
       const brandsMap = new Map<string, { id: string; name: string; count: number }>();
-      (data || []).forEach((item: any) => {
+      (data || []).forEach((item: unknown) => {
         if (item.brands && item.brands.id && item.brands.name) {
           const brandId = item.brands.id;
           if (brandsMap.has(brandId)) {
@@ -951,7 +949,7 @@ class ListingsService {
       // Return sorted by name
       return Array.from(brandsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
-      console.error('Error fetching available brands:', error);
+      logger.error('Error fetching available brands:', error);
       return [];
     }
   }
@@ -983,7 +981,7 @@ class ListingsService {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching price range counts:', error);
+        logger.error('Error fetching price range counts:', error);
         return {
           'Under £50.00': 0,
           '£50.00 - £100.00': 0,
@@ -1000,7 +998,7 @@ class ListingsService {
         'Over £200.00': 0,
       };
 
-      (data || []).forEach((item: any) => {
+      (data || []).forEach((item: unknown) => {
         const price = item.starting_price || 0;
         if (price < 50) {
           counts['Under £50.00'] += 1;
@@ -1015,7 +1013,7 @@ class ListingsService {
 
       return counts;
     } catch (error) {
-      console.error('Error fetching price range counts:', error);
+      logger.error('Error fetching price range counts:', error);
       return {
         'Under £50.00': 0,
         '£50.00 - £100.00': 0,
@@ -1051,7 +1049,7 @@ class ListingsService {
         return new Map<string, number>();
       }
 
-      const productIds = products.map((p: any) => p.id);
+      const productIds = products.map((p: unknown) => p.id);
 
       // Query product_attribute_values for size attribute
       const { data: attributeValues, error: attributeError } = await supabase
@@ -1061,14 +1059,14 @@ class ListingsService {
         .in('product_id', productIds);
 
       if (attributeError) {
-        console.error('Error fetching attribute values:', attributeError);
+        logger.error('Error fetching attribute values:', attributeError);
         return new Map<string, number>();
       }
 
       // Count occurrences of each size
       const sizeCounts = new Map<string, number>();
 
-      (attributeValues || []).forEach((item: any) => {
+      (attributeValues || []).forEach((item: unknown) => {
         // Handle multi-select values (stored as JSON array in value_text)
         if (item.value_text) {
           try {
@@ -1091,7 +1089,7 @@ class ListingsService {
 
       return sizeCounts;
     } catch (error) {
-      console.error('Error fetching size counts:', error);
+      logger.error('Error fetching size counts:', error);
       return new Map<string, number>();
     }
   }
@@ -1113,18 +1111,18 @@ class ListingsService {
         .eq('attribute_id', sizeAttributeId);
 
       if (error) {
-        console.error('Error fetching products by sizes:', error);
+        logger.error('Error fetching products by sizes:', error);
         return [];
       }
 
       const productIds = new Set<string>();
 
-      (data || []).forEach((item: any) => {
+      (data || []).forEach((item: unknown) => {
         if (item.value_text) {
           try {
             const parsed = JSON.parse(item.value_text);
             if (Array.isArray(parsed)) {
-              // Multi-select: check if any selected size matches
+              // Multi-select: check if unknown selected size matches
               if (parsed.some((v: string) => sizeOptionIds.includes(v))) {
                 productIds.add(item.product_id);
               }
@@ -1145,7 +1143,7 @@ class ListingsService {
 
       return Array.from(productIds);
     } catch (error) {
-      console.error('Error getting products by sizes:', error);
+      logger.error('Error getting products by sizes:', error);
       return [];
     }
   }
@@ -1158,9 +1156,9 @@ class ListingsService {
     return apiListings.map((apiListing: Product) => {
       // Prefer primary image, fall back to first in product_images
       const primaryImage: string | undefined =
-        (apiListing as any).product_image ||
-        ((apiListing as any).product_images && (apiListing as any).product_images.length > 0
-          ? (apiListing as any).product_images[0]
+        (apiListing as unknown).product_image ||
+        ((apiListing as unknown).product_images && (apiListing as unknown).product_images.length > 0
+          ? (apiListing as unknown).product_images[0]
           : undefined);
 
       return {
@@ -1178,6 +1176,7 @@ class ListingsService {
         sub_sub_subcategory_id: apiListing.sub_sub_subcategory_id,
         brand_id: apiListing.brand_id,
         stock_quantity: apiListing.stock_quantity,
+        auction_type: apiListing.auction_type,
         status: apiListing.status as 'draft' | 'published' | 'private',
         created_at: apiListing.created_at,
         product_categories: apiListing.product_categories,
@@ -1214,7 +1213,7 @@ class ListingsService {
       if (!productsError && products) {
         // Get unique product names
         const uniqueNames = new Set<string>();
-        products.forEach((p: any) => {
+        products.forEach((p: unknown) => {
           if (p.product_name && !uniqueNames.has(p.product_name.toLowerCase())) {
             uniqueNames.add(p.product_name.toLowerCase());
             suggestions.push({
@@ -1235,7 +1234,7 @@ class ListingsService {
         .limit(Math.floor(limit / 2));
 
       if (!brandsError && brands) {
-        brands.forEach((b: any) => {
+        brands.forEach((b: unknown) => {
           suggestions.push({
             type: 'brand',
             value: b.name,
@@ -1256,19 +1255,27 @@ class ListingsService {
 
       return suggestions.slice(0, limit);
     } catch (error) {
-      console.error('Error fetching search suggestions:', error);
+      logger.error('Error fetching search suggestions:', error);
       return [];
     }
   }
 
   /**
    * Get related products from the same category
-   * @param categoryId - The category ID to find related products for
-   * @param excludeId - The product ID to exclude from results
+   * @param productId - The product ID to exclude from results
    * @param limit - Maximum number of related products to return
    */
-  async getRelatedProducts(categoryId: string, excludeId: string, limit: number = 4): Promise<Product[]> {
+  async getRelatedProducts(productId: string, limit: number = 4): Promise<Product[]> {
     try {
+      // First, get the product to retrieve its category_id
+      const product = await this.getListingById(productId);
+
+      if (!product || !product.category_id) {
+        return [];
+      }
+
+      const categoryId = product.category_id;
+
       // Fetch related products from the same category
       const { data, error } = await supabase
         .from('listings')
@@ -1282,13 +1289,14 @@ class ListingsService {
           product_images,
           seller_id,
           category_id,
+          auction_type,
           product_categories(id, name)
         `
         )
         .eq('product_type', 'shop')
         .eq('status', 'published')
         .eq('category_id', categoryId)
-        .neq('id', excludeId)
+        .neq('id', productId)
         .limit(limit);
 
       if (error) throw error;
@@ -1298,20 +1306,174 @@ class ListingsService {
       }
 
       // Fetch seller info for all related products
-      const sellerIds = [...new Set(data.map((p: any) => p.seller_id))];
+      const sellerIds = [...new Set(data.map((p: unknown) => p.seller_id))];
       const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
 
-      const sellersMap = new Map((sellers || []).map((s: any) => [s.user_id, s]));
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
 
-      const productsWithSellers = data.map((p: any) => ({
+      const productsWithSellers = data.map((p: unknown) => ({
         ...p,
         seller_info_view: sellersMap.get(p.seller_id) || null,
       })) as Product[];
 
       return productsWithSellers;
     } catch (error) {
-      console.error('Error fetching related products:', error);
+      logger.error('Error fetching related products:', error);
       throw new Error('Failed to fetch related products');
+    }
+  }
+
+  /**
+   * Get products by their IDs
+   * @param productIds - Array of product IDs
+   * @returns Array of products
+   */
+  async getProductsByIds(productIds: string[]): Promise<Product[]> {
+    try {
+      if (productIds.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('listings')
+        .select(
+          `
+          id,
+          product_name,
+          starting_price,
+          discounted_price,
+          product_image,
+          product_images,
+          product_description,
+          seller_id,
+          category_id,
+          subcategory_id,
+          sub_subcategory_id,
+          sub_sub_subcategory_id,
+          brand_id,
+          status,
+          created_at,
+          stock_quantity,
+          auction_type,
+          product_categories(id, name)
+        `
+        )
+        .in('id', productIds)
+        .eq('status', 'published');
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        return [];
+      }
+
+      // Fetch seller info for all products
+      const sellerIds = [...new Set((data || []).map((p: unknown) => p.seller_id))];
+      const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
+
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
+
+      return (data || []).map((product: unknown) => ({
+        ...product,
+        seller_info_view: sellersMap.get(product.seller_id) || null,
+      })) as Product[];
+    } catch (error) {
+      logger.error('Error fetching products by IDs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get recommended products based on recently viewed items
+   * @param recentlyViewedProducts - Array of recently viewed products
+   * @param limit - Maximum number of recommended products to return
+   * @returns Array of recommended products
+   */
+  async getRecommendedProducts(recentlyViewedProducts: Product[], limit: number = 8): Promise<Product[]> {
+    try {
+      if (recentlyViewedProducts.length === 0) return [];
+
+      // Extract unique brands, categories, and price ranges from recently viewed
+      const brandIds = [...new Set(recentlyViewedProducts.map((p) => p.brand_id).filter(Boolean))];
+      const categoryIds = [...new Set(recentlyViewedProducts.map((p) => p.sub_sub_subcategory_id).filter(Boolean))];
+      const viewedProductIds = recentlyViewedProducts.map((p) => p.id);
+
+      // Calculate average price
+      const avgPrice =
+        recentlyViewedProducts.reduce((sum, p) => sum + (p.discounted_price || p.starting_price), 0) /
+        recentlyViewedProducts.length;
+
+      const minPrice = avgPrice * 0.5;
+      const maxPrice = avgPrice * 1.5;
+
+      // Get non-suspended sellers
+      const { data: nonSuspendedSellers } = await supabase
+        .from('seller_profiles')
+        .select('user_id')
+        .eq('is_suspended', false);
+
+      const nonSuspendedSellerIds = nonSuspendedSellers?.map((s: unknown) => s.user_id) || [];
+
+      // Build query for similar products
+      let query = supabase
+        .from('listings')
+        .select(
+          `
+          id,
+          product_name,
+          starting_price,
+          discounted_price,
+          product_image,
+          product_images,
+          seller_id,
+          category_id,
+          subcategory_id,
+          sub_subcategory_id,
+          sub_sub_subcategory_id,
+          brand_id,
+          auction_type,
+          status,
+          created_at,
+          product_categories(id, name)
+        `
+        )
+        .eq('status', 'published')
+        .in('seller_id', nonSuspendedSellerIds)
+        .not('id', 'in', `(${viewedProductIds.join(',')})`)
+        .gte('starting_price', minPrice)
+        .lte('starting_price', maxPrice);
+
+      // Add brand or category filters
+      if (brandIds.length > 0 || categoryIds.length > 0) {
+        const conditions = [];
+        if (brandIds.length > 0) {
+          conditions.push(`brand_id.in.(${brandIds.join(',')})`);
+        }
+        if (categoryIds.length > 0) {
+          conditions.push(`sub_sub_subcategory_id.in.(${categoryIds.join(',')})`);
+        }
+        query = query.or(conditions.join(','));
+      }
+
+      const { data, error } = await query.limit(limit);
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        return [];
+      }
+
+      // Fetch seller info for recommended products
+      const sellerIds = [...new Set((data || []).map((p: unknown) => p.seller_id))];
+      const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
+
+      const sellersMap = new Map((sellers || []).map((s: unknown) => [s.user_id, s]));
+
+      return (data || []).map((product: unknown) => ({
+        ...product,
+        seller_info_view: sellersMap.get(product.seller_id) || null,
+      })) as Product[];
+    } catch (error) {
+      logger.error('Error fetching recommended products:', error);
+      return [];
     }
   }
 
@@ -1337,6 +1499,7 @@ class ListingsService {
       sub_sub_subcategory_id?: string | null;
       brand_id?: string | null;
       stock_quantity?: number | null;
+      auction_type?: 'marketplace' | 'timed';
       status?: 'draft' | 'published' | 'private';
     }>
   ): Promise<number> {
@@ -1354,7 +1517,7 @@ class ListingsService {
 
           const startingPrice = sp !== undefined && sp !== null && !Number.isNaN(sp) ? Number(sp) : 0;
           const discountedPrice = dp !== undefined && dp !== null && !Number.isNaN(dp) ? Number(dp) : null;
-          const stockQty = qty !== undefined && qty !== null && !Number.isNaN(qty as any) ? Number(qty) : null;
+          const stockQty = qty !== undefined && qty !== null && !Number.isNaN(qty as unknown) ? Number(qty) : null;
 
           return {
             seller_id: sellerId,
@@ -1374,6 +1537,7 @@ class ListingsService {
             sub_sub_subcategory_id: row.sub_sub_subcategory_id ?? null,
             brand_id: row.brand_id ?? null,
             stock_quantity: stockQty,
+            auction_type: row.auction_type ?? 'marketplace',
           };
         });
 
@@ -1381,10 +1545,7 @@ class ListingsService {
         return 0;
       }
 
-      const { data, error } = await supabase
-        .from('listings')
-        .insert(rows)
-        .select('id');
+      const { data, error } = await supabase.from('listings').insert(rows).select('id');
 
       if (error) {
         throw new Error(`Failed to bulk create products: ${error.message}`);
@@ -1392,8 +1553,250 @@ class ListingsService {
 
       return (data?.length as number) || 0;
     } catch (error) {
-      console.error('Error in bulkCreateProducts:', error);
+      logger.error('Error in bulkCreateProducts:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get auction listings with pagination and sorting
+   * @param page - Current page number (0-indexed)
+   * @param pageSize - Number of products per page
+   * @param sortBy - Sort option: 'ending_soon' | 'newest' | 'price_low' | 'price_high'
+   * @returns Object with products, total count, and pagination info
+   */
+  async getAuctions(
+    page: number = 0,
+    pageSize: number = 20,
+    sortBy: 'ending_soon' | 'newest' | 'price_low' | 'price_high' = 'ending_soon'
+  ): Promise<{ products: unknown[]; total: number }> {
+    try {
+      let query = supabase
+        .from('listings')
+        .select(
+          `
+            id,
+            slug,
+            product_name,
+            starting_price,
+            product_image,
+            product_description,
+            seller_id,
+            status,
+            created_at,
+            auction_type,
+            auctions!inner(
+              id,
+              current_bid,
+              starting_bid,
+              end_time,
+              status,
+              bid_count,
+              reserve_price,
+              reserve_met
+            )
+          `,
+          { count: 'exact' }
+        )
+        .eq('auction_type', 'timed')
+        .eq('status', 'published')
+        .eq('product_type', 'shop')
+        .eq('archived', false)
+        .eq('auctions.status', 'active');
+
+      // Apply sorting
+      if (sortBy === 'ending_soon') {
+        query = query.order('end_time', { foreignTable: 'auctions', ascending: true });
+      } else if (sortBy === 'newest') {
+        query = query.order('created_at', { ascending: false });
+      } else if (sortBy === 'price_low') {
+        query = query.order('starting_price', { ascending: true });
+      } else if (sortBy === 'price_high') {
+        query = query.order('starting_price', { ascending: false });
+      }
+
+      const {
+        data: productsData,
+        error: productsError,
+        count,
+      } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (productsError) throw productsError;
+
+      // Fetch seller information separately
+      const sellerIds = [...new Set((productsData || []).map((p: unknown) => p.seller_id))];
+      const { data: sellers } = await supabase.from('seller_info_view').select('*').in('user_id', sellerIds);
+
+      const sellersMap = new Map(sellers?.map((s: unknown) => [s.user_id, s]));
+
+      const productsWithSellers = (productsData || []).map((product: unknown) => ({
+        ...product,
+        seller_info_view: sellersMap.get(product.seller_id) || null,
+      }));
+
+      return {
+        products: productsWithSellers,
+        total: count || 0,
+      };
+    } catch (error) {
+      logger.error('Error fetching auctions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create an auction listing for a stream
+   * @param auctionData - Auction listing data
+   * @returns Created listing
+   */
+  async createAuctionListing(auctionData: {
+    seller_id: string;
+    stream_id: string;
+    product_name: string;
+    product_description: string;
+    starting_price: number;
+    current_bid: number;
+    auction_end_time: string;
+  }): Promise<unknown> {
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .insert({
+          seller_id: auctionData.seller_id,
+          stream_id: auctionData.stream_id,
+          product_name: auctionData.product_name,
+          product_description: auctionData.product_description,
+          starting_price: auctionData.starting_price,
+          current_bid: auctionData.current_bid,
+          is_active: true,
+          auction_end_time: auctionData.auction_end_time,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error('Error creating auction listing:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * End an auction by updating the listing
+   * @param listingId - The listing ID to update
+   */
+  async endAuction(listingId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('listings')
+        .update({
+          is_active: false,
+          auction_end_time: null,
+        })
+        .eq('id', listingId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error('Error ending auction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get auction data for a specific listing
+   * @param listingId - The listing ID
+   * @returns Auction data or null if not found
+   */
+  async getAuctionByListingId(listingId: string): Promise<unknown | null> {
+    try {
+      const { data, error } = await supabase
+        .from('auctions')
+        .select('*')
+        .eq('listing_id', listingId)
+        .eq('status', 'active')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        // PGRST116 is "not found" error, which is okay
+        throw error;
+      }
+
+      return data ? (data as unknown) : null;
+    } catch (error) {
+      logger.error('Error fetching auction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get bids for an auction
+   * @param auctionId - The auction ID
+   * @returns Array of bids
+   */
+  async getBidsForAuction(auctionId: string): Promise<unknown[]> {
+    try {
+      const { data, error } = await supabase
+        .from('bids')
+        .select('*')
+        .eq('auction_id', auctionId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return (data as unknown[]) || [];
+    } catch (error) {
+      logger.error('Error fetching bids:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Place a proxy bid on an auction
+   * @param auctionId - The auction ID
+   * @param maxBidAmount - Maximum bid amount
+   * @returns Result with success status, current bid, and if user is leading
+   */
+  async placeProxyBid(
+    auctionId: string,
+    maxBidAmount: number
+  ): Promise<{
+    success: boolean;
+    currentBid: number;
+    isLeading: boolean;
+    error?: string;
+  }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('place-proxy-bid', {
+        body: {
+          auctionId: auctionId,
+          maxBidAmount: maxBidAmount,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data && data.success) {
+        return {
+          success: true,
+          currentBid: data.currentBid,
+          isLeading: data.isLeading,
+        };
+      } else {
+        return {
+          success: false,
+          currentBid: 0,
+          isLeading: false,
+          error: (data && data.error) || 'Failed to place bid',
+        };
+      }
+    } catch (error) {
+      logger.error('Error placing proxy bid:', error);
+      return {
+        success: false,
+        currentBid: 0,
+        isLeading: false,
+        error: error instanceof Error ? error.message : 'Failed to place bid',
+      };
     }
   }
 }

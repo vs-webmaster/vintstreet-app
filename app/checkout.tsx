@@ -1,15 +1,11 @@
-import {
-  CartItem,
-  ordersService,
-  SavedAddress,
-  savedAddressesService,
-  ShippingOption,
-  shippingService,
-  stripeService,
-} from '@/api';
+import { buyerService, ordersService, savedAddressesService, shippingService, stripeService } from '@/api/services';
+import { CartItem, SavedAddress, ShippingBand, ShippingOption, ShippingProviderPrice } from '@/api/types';
+import { DropdownComponent } from '@/components/common';
 import { useAuth } from '@/hooks/use-auth';
 import { useCart } from '@/hooks/use-cart';
 import { styles } from '@/styles';
+import { formatPrice } from '@/utils';
+import { logger } from '@/utils/logger';
 import { showErrorToast, showSuccessToast, showWarningToast } from '@/utils/toast';
 import { Feather } from '@expo/vector-icons';
 import axios from 'axios';
@@ -18,7 +14,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   Text,
@@ -84,7 +79,7 @@ const InputField = ({
         error ? 'border-red-400' : 'border-gray-200'
       }`}
     >
-      {icon && <Feather name={icon as any} color={error ? '#f87171' : '#666'} size={16} className="mr-2" />}
+      {icon && <Feather name={icon as unknown} color={error ? '#f87171' : '#666'} size={16} className="mr-2" />}
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -102,10 +97,10 @@ const InputField = ({
 export default function CheckoutScreen() {
   const { sellerId, productIds } = useLocalSearchParams();
 
-  const { cart, isLoading, refreshCart, removeItem } = useCart();
+  const { items, isLoading, refreshCart, removeItem } = useCart();
   const { user } = useAuth();
   const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
-  const [sellerInfo, setSellerInfo] = useState<any>(null);
+  const [sellerInfo, setSellerInfo] = useState<unknown>(null);
 
   // Step completion tracking
   const [stepCompleted, setStepCompleted] = useState([false, false]);
@@ -128,6 +123,9 @@ export default function CheckoutScreen() {
   const [shippingMethods, setShippingMethods] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [isGeneratingLabels, setIsGeneratingLabels] = useState(false);
+  const [shippingBands, setShippingBands] = useState<ShippingBand[]>([]);
+  const [shippingProviderPrices, setShippingProviderPrices] = useState<ShippingProviderPrice[]>([]);
 
   // Saved addresses
   const [addressesLoading, setAddressesLoading] = useState(false);
@@ -135,46 +133,55 @@ export default function CheckoutScreen() {
   const [useSavedAddress, setUseSavedAddress] = useState<boolean>(true);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
 
-  const [countries] = useState([
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'US', name: 'United States' },
-    { code: 'CA', name: 'Canada' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'FR', name: 'France' },
-    { code: 'ES', name: 'Spain' },
-    { code: 'IT', name: 'Italy' },
-    { code: 'NL', name: 'Netherlands' },
-    { code: 'BE', name: 'Belgium' },
-    { code: 'IE', name: 'Ireland' },
-    { code: 'DK', name: 'Denmark' },
-    { code: 'SE', name: 'Sweden' },
-    { code: 'NO', name: 'Norway' },
-    { code: 'FI', name: 'Finland' },
-    { code: 'PL', name: 'Poland' },
-    { code: 'CZ', name: 'Czech Republic' },
-    { code: 'AT', name: 'Austria' },
-    { code: 'CH', name: 'Switzerland' },
-    { code: 'PT', name: 'Portugal' },
-  ]);
-
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [countrySearch, setCountrySearch] = useState('');
+  const COUNTRY_OPTIONS = [
+    { label: 'United Kingdom', value: 'GB' },
+    { label: 'United States', value: 'US' },
+    { label: 'Canada', value: 'CA' },
+    { label: 'Australia', value: 'AU' },
+    { label: 'Germany', value: 'DE' },
+    { label: 'France', value: 'FR' },
+    { label: 'Spain', value: 'ES' },
+    { label: 'Italy', value: 'IT' },
+    { label: 'Netherlands', value: 'NL' },
+    { label: 'Belgium', value: 'BE' },
+    { label: 'Ireland', value: 'IE' },
+    { label: 'Denmark', value: 'DK' },
+    { label: 'Sweden', value: 'SE' },
+    { label: 'Norway', value: 'NO' },
+    { label: 'Finland', value: 'FI' },
+    { label: 'Poland', value: 'PL' },
+    { label: 'Czech Republic', value: 'CZ' },
+    { label: 'Austria', value: 'AT' },
+    { label: 'Switzerland', value: 'CH' },
+    { label: 'Portugal', value: 'PT' },
+  ];
 
   // Mapbox address autocomplete
-  const [addressResults, setAddressResults] = useState<any[]>([]);
+  const [addressResults, setAddressResults] = useState<unknown[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
-
-  // Filter countries based on search
-  const filteredCountries = countries.filter(
-    (country) =>
-      country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
-      country.code.toLowerCase().includes(countrySearch.toLowerCase())
-  );
 
   useEffect(() => {
     loadCheckoutData();
   }, [sellerId, productIds]);
+
+  // Fetch shipping bands and provider prices
+  useEffect(() => {
+    const fetchShippingData = async () => {
+      try {
+        // Fetch shipping bands
+        const bands = await shippingService.getShippingBands();
+        setShippingBands(bands);
+
+        // Fetch provider prices
+        const prices = await shippingService.getShippingProviderPrices();
+        setShippingProviderPrices(prices);
+      } catch (error) {
+        logger.error('Error fetching shipping data', error);
+      }
+    };
+
+    fetchShippingData();
+  }, []);
 
   useEffect(() => {
     if (sellerId) {
@@ -192,11 +199,35 @@ export default function CheckoutScreen() {
     updateStepCompletion();
   }, [shippingInformation, selectedShippingMethod, shippingMethods]);
 
+  // Function to identify which weight band a total weight falls into
+  const getWeightBand = (totalWeight: number, bands: ShippingBand[]): ShippingBand | null => {
+    if (totalWeight < 0 || bands.length === 0) return null;
+
+    // Find the band that contains this weight
+    // Bands are inclusive on both ends: min_weight <= weight <= max_weight
+    const matchingBand = bands.find((band) => totalWeight >= band.min_weight && totalWeight <= band.max_weight);
+
+    return matchingBand || null;
+  };
+
+  // Function to get postage price using provider_id and band_id
+  const getPostagePrice = (providerId: string | null, bandId: string | null): number | null => {
+    if (!providerId || !bandId || !shippingProviderPrices || shippingProviderPrices.length === 0) {
+      return null;
+    }
+
+    const priceEntry = shippingProviderPrices.find(
+      (price) => price.provider_id === providerId && price.band_id === bandId
+    );
+
+    return priceEntry ? Number(priceEntry.price) : null;
+  };
+
   const loadCheckoutData = () => {
     if (sellerId && productIds) {
       // Seller-based checkout with multiple products
       const productIdArray = (productIds as string).split(',');
-      const cartItems = cart.items.filter(
+      const cartItems = items.filter(
         (item) => productIdArray.includes(item.product?.id || '') && item.product?.seller_id === sellerId
       );
 
@@ -222,7 +253,7 @@ export default function CheckoutScreen() {
         setSelectedShippingMethod(options[0].id);
       }
     } catch (error) {
-      console.error('Error fetching shipping options:', error);
+      logger.error('Error fetching shipping options', error);
       setShippingMethods([]);
     } finally {
       setShippingLoading(false);
@@ -260,7 +291,7 @@ export default function CheckoutScreen() {
         setUseSavedAddress(false);
       }
     } catch (err) {
-      console.error('Error loading saved addresses:', err);
+      logger.error('Error loading saved addresses', err);
       setSavedAddresses([]);
       setUseSavedAddress(false);
     } finally {
@@ -327,8 +358,8 @@ export default function CheckoutScreen() {
         }&autocomplete=true&limit=10&types=address,place,postcode`
       );
 
-      const sorted = (res.data?.features || []).sort((a: any, b: any) => {
-        const order: any = { address: 0, place: 1, postcode: 2, region: 3 };
+      const sorted = (res.data?.features || []).sort((a: unknown, b: unknown) => {
+        const order: unknown = { address: 0, place: 1, postcode: 2, region: 3 };
         const aType = a.place_type?.[0] || 'other';
         const bType = b.place_type?.[0] || 'other';
         return (order[aType] ?? 999) - (order[bType] ?? 999);
@@ -342,7 +373,7 @@ export default function CheckoutScreen() {
   };
 
   // When user selects an address suggestion, parse and populate fields
-  const handleAddressSelect = (place: any) => {
+  const handleAddressSelect = (place: unknown) => {
     const context = place.context || [];
     const placeType = place.place_type?.[0] || '';
 
@@ -372,7 +403,7 @@ export default function CheckoutScreen() {
       postalCodeValue = place.properties.postcode;
     }
 
-    context.forEach((item: any) => {
+    context.forEach((item: unknown) => {
       if (item.id.includes('place')) {
         cityValue = item.text;
       } else if (item.id.includes('locality') && !cityValue) {
@@ -531,60 +562,165 @@ export default function CheckoutScreen() {
         throw new Error('Selected shipping method not found');
       }
 
-      // Calculate total order amount
-      const subtotal = checkoutItems.reduce((total, item) => {
-        const price =
-          item.product?.discounted_price !== null
-            ? item.product?.discounted_price || 0
-            : item.product?.starting_price || 0;
-        return total + price;
+      // Get shipping details either from selected address or form
+      let finalShippingDetails = shippingInformation;
+
+      if (useSavedAddress && selectedAddressId) {
+        const selectedAddress = savedAddresses.find((addr) => addr.id === selectedAddressId);
+        if (selectedAddress) {
+          finalShippingDetails = {
+            firstName: selectedAddress.first_name,
+            lastName: selectedAddress.last_name,
+            address1: selectedAddress.address_line1,
+            address2: selectedAddress.address_line2 || '',
+            city: selectedAddress.city,
+            state: selectedAddress.state || '',
+            postalCode: selectedAddress.postal_code,
+            country: selectedAddress.country,
+            phone: selectedAddress.phone || '',
+          };
+        }
+      }
+
+      // Validation
+      if (
+        !finalShippingDetails.firstName ||
+        !finalShippingDetails.lastName ||
+        !finalShippingDetails.address1 ||
+        !finalShippingDetails.city ||
+        !finalShippingDetails.country
+      ) {
+        showErrorToast('Please fill in all required shipping fields');
+        setCheckoutLoading(false);
+        return;
+      }
+
+      // Save shipping info to buyer profile and saved addresses if new address
+      if (!useSavedAddress) {
+        try {
+          // Save to buyer_profiles
+          await buyerService.saveBuyerProfile(user.id, {
+            shipping_first_name: finalShippingDetails.firstName,
+            shipping_last_name: finalShippingDetails.lastName,
+            shipping_address_line1: finalShippingDetails.address1,
+            shipping_address_line2: finalShippingDetails.address2 || undefined,
+            shipping_city: finalShippingDetails.city,
+            shipping_state: finalShippingDetails.state || undefined,
+            shipping_postal_code: finalShippingDetails.postalCode,
+            shipping_country: finalShippingDetails.country,
+            shipping_phone: finalShippingDetails.phone || undefined,
+          });
+
+          // Save to saved_addresses table
+          await savedAddressesService.create({
+            user_id: user.id,
+            label: null,
+            first_name: finalShippingDetails.firstName,
+            last_name: finalShippingDetails.lastName,
+            address_line1: finalShippingDetails.address1,
+            address_line2: finalShippingDetails.address2 || null,
+            city: finalShippingDetails.city,
+            state: finalShippingDetails.state || '',
+            postal_code: finalShippingDetails.postalCode,
+            country: finalShippingDetails.country,
+            phone: finalShippingDetails.phone || '',
+            is_default: savedAddresses.length === 0,
+          });
+        } catch (error) {
+          logger.error('Error saving shipping info', error);
+          // Continue with checkout even if saving fails
+        }
+      }
+
+      // Calculate total weight for checkout items
+      const totalWeight = checkoutItems.reduce((weightSum, item) => {
+        const weight = (item.product as unknown)?.weight ?? 0;
+        return weightSum + (typeof weight === 'number' ? weight : 0);
       }, 0);
 
-      const totalAmount = subtotal + selectedShipping.price;
+      // Get weight band
+      const weightBand = getWeightBand(totalWeight, shippingBands);
 
-      // Create orders for each item (since each item might have different sellers)
-      const orderPromises = checkoutItems.map(async (item) => {
+      // Get postage price
+      const shippingPrice = getPostagePrice(selectedShipping.provider_id, weightBand?.id || null) || 0;
+
+      // Create pending orders for each item (order_amount does NOT include shipping)
+      const createdOrders = [];
+      for (const item of checkoutItems) {
         if (!item.product?.id || !item.product?.seller_id) {
           throw new Error('Invalid product data');
         }
 
-        return ordersService.createOrder({
+        const order = await ordersService.createOrder({
           listing_id: item.product.id,
           buyer_id: user.id,
           seller_id: item.product.seller_id,
           stream_id: 'marketplace-order',
           order_amount:
-            (item.product.discounted_price !== null ? item.product.discounted_price : item.product.starting_price) +
-            selectedShipping.price / checkoutItems.length,
+            item.product.discounted_price !== null ? item.product.discounted_price : item.product.starting_price || 0,
           quantity: 1,
           status: 'pending',
           delivery_status: 'processing',
         });
-      });
 
-      // Wait for all orders to be created
-      const orders = await Promise.all(orderPromises);
-
-      // Prepare order data for Stripe checkout (matching web implementation)
-      const createdOrders = orders.map((order) => {
-        const cartItem = checkoutItems.find((item) => item.product?.id === order.listing_id);
-        const product = cartItem?.product;
-
-        return {
+        createdOrders.push({
           id: order.id,
           seller_id: order.seller_id ?? '',
-          product_name: product?.product_name ?? 'Product',
+          product_name: item.product?.product_name ?? 'Product',
           seller_name:
-            product?.seller_info_view?.shop_name ?? product?.seller_info_view?.display_name_format ?? 'Seller',
+            item.product?.seller_info_view?.shop_name ??
+            item.product?.seller_info_view?.display_name_format ??
+            'Seller',
           price: order.order_amount ?? 0,
-          quantity: order.quantity ?? 1,
-        };
-      });
+          quantity: 1,
+        });
+      }
+
+      // Generate shipping labels for all orders before proceeding to checkout
+      setIsGeneratingLabels(true);
+      showSuccessToast('Generating shipping labels...');
+
+      // Prepare shipping address data
+      const shippingAddressData = {
+        first_name: finalShippingDetails.firstName,
+        last_name: finalShippingDetails.lastName,
+        address_line1: finalShippingDetails.address1,
+        address_line2: finalShippingDetails.address2,
+        city: finalShippingDetails.city,
+        state: finalShippingDetails.state,
+        postal_code: finalShippingDetails.postalCode,
+        country: finalShippingDetails.country,
+        phone: finalShippingDetails.phone,
+        email: user.email || '',
+      };
+
+      const labelResults = [];
+      for (const order of createdOrders) {
+        // Generate label for each order
+        const labelResult = await shippingService.generateShippingLabel(
+          order.id,
+          shippingAddressData,
+          selectedShippingMethod
+        );
+
+        if (!labelResult || !labelResult.success) {
+          // If label generation fails, stop the checkout process
+          showErrorToast('Failed to generate shipping label for order. Please try again.');
+          setIsGeneratingLabels(false);
+          setCheckoutLoading(false);
+          return;
+        }
+        labelResults.push(labelResult);
+      }
+
+      // All labels generated successfully, proceed with checkout
+      setIsGeneratingLabels(false);
+      showSuccessToast('Shipping labels generated successfully. Proceeding to payment...');
 
       // Process payment with Stripe using StripeService
       const paymentResult = await stripeService.processPayment({
         orders: createdOrders,
-        shippingCost: selectedShipping.price,
+        shippingCost: shippingPrice,
       });
 
       if (paymentResult.success) {
@@ -606,10 +742,11 @@ export default function CheckoutScreen() {
         showErrorToast('Failed to set up payment. Please try again.');
       }
     } catch (error) {
-      console.error('Checkout error:', error);
+      logger.error('Checkout error', error);
       showErrorToast(
         error instanceof Error ? error.message : 'An error occurred while processing your order. Please try again.'
       );
+      setIsGeneratingLabels(false);
     } finally {
       setCheckoutLoading(false);
     }
@@ -632,7 +769,7 @@ export default function CheckoutScreen() {
 
         <View className="flex-1 items-center justify-center p-4">
           <ActivityIndicator size="large" color="#000" />
-          <Text className="mt-3 text-base font-inter-bold text-gray-600">Loading your checkout...</Text>
+          <Text className="mt-2 text-base font-inter-bold text-gray-600">Loading your checkout...</Text>
         </View>
       </SafeAreaView>
     );
@@ -679,7 +816,7 @@ export default function CheckoutScreen() {
                 {savedAddresses.length > 0 && (
                   <View className="flex-row items-center justify-between mb-2">
                     <Text className="text-sm font-inter-bold text-black">Delivery Address</Text>
-                    <TouchableOpacity onPress={() => router.push('/other/addresses' as any)}>
+                    <TouchableOpacity onPress={() => router.push('/other/addresses' as unknown)}>
                       <Text className="text-sm font-inter-bold text-gray-800">Manage Addresses</Text>
                     </TouchableOpacity>
                   </View>
@@ -849,7 +986,7 @@ export default function CheckoutScreen() {
                               nestedScrollEnabled
                               keyboardShouldPersistTaps="handled"
                             >
-                              {addressResults.map((item: any) => {
+                              {addressResults.map((item: unknown) => {
                                 const placeType = item.place_type?.[0] || '';
                                 const icon = placeType === 'address' ? '📍' : placeType === 'place' ? '🏙️' : '📮';
                                 return (
@@ -918,18 +1055,15 @@ export default function CheckoutScreen() {
                     </View>
 
                     <View className="mb-4">
-                      <Text className="mb-2 text-sm font-inter-bold text-gray-800">
-                        Country <Text className="text-red-500">*</Text>
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => setShowCountryPicker(true)}
-                        className="flex-row items-center px-3 py-3 rounded-lg bg-white border border-gray-200"
-                      >
-                        <Text className="flex-1 text-base font-inter-semibold text-gray-800">
-                          {countries.find((c) => c.code === shippingInformation.country)?.name || 'Select Country'}
-                        </Text>
-                        <Feather name="chevron-down" color="#666" size={20} />
-                      </TouchableOpacity>
+                      <DropdownComponent
+                        label="Country"
+                        data={COUNTRY_OPTIONS}
+                        value={shippingInformation.country}
+                        placeholder="Select Country"
+                        required
+                        onChange={(item) => updateShippingAddress('country', item.value)}
+                        error={shippingInformationErrors.country}
+                      />
                       <Text className="mt-1 text-xs font-inter-semibold text-gray-600">
                         Changing country may affect shipping costs.
                       </Text>
@@ -969,43 +1103,65 @@ export default function CheckoutScreen() {
                   </View>
                 ) : shippingMethods.length > 0 ? (
                   <View className="gap-2">
-                    {shippingMethods.map((option) => (
-                      <TouchableOpacity
-                        key={option.id}
-                        onPress={() => setSelectedShippingMethod(option.id)}
-                        className={`flex-row items-center justify-between p-3 border rounded-lg ${
-                          selectedShippingMethod === option.id ? 'border-black bg-black/10' : 'border-gray-200 bg-white'
-                        }`}
-                      >
-                        <View className="flex-row items-center gap-3">
-                          <View
-                            className={`w-4 h-4 rounded-full border-2 ${
-                              selectedShippingMethod === option.id ? 'border-black bg-black' : 'border-gray-300'
-                            }`}
-                          >
-                            {selectedShippingMethod === option.id && (
-                              <View className="w-2 h-2 rounded-full bg-white m-0.5" />
-                            )}
+                    {shippingMethods.map((option) => {
+                      // Calculate total weight for checkout items
+                      const totalWeight = checkoutItems.reduce((weightSum, item) => {
+                        const weight = (item.product as unknown)?.weight ?? 0;
+                        return weightSum + (typeof weight === 'number' ? weight : 0);
+                      }, 0);
+
+                      // Get weight band
+                      const weightBand = getWeightBand(totalWeight, shippingBands);
+
+                      // Get postage price
+                      const postagePrice = getPostagePrice(option.provider_id, weightBand?.id || null);
+
+                      // Use provider name from relationship if available
+                      const providerName = option.shipping_providers?.name || option.name;
+                      const providerDescription = option.shipping_providers?.description || option.description;
+
+                      return (
+                        <TouchableOpacity
+                          key={option.id}
+                          onPress={() => setSelectedShippingMethod(option.id)}
+                          className={`flex-row items-center justify-between p-3 border rounded-lg ${
+                            selectedShippingMethod === option.id
+                              ? 'border-black bg-black/10'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <View className="flex-row items-center gap-3 flex-1">
+                            <View
+                              className={`w-4 h-4 rounded-full border-2 ${
+                                selectedShippingMethod === option.id ? 'border-black bg-black' : 'border-gray-300'
+                              }`}
+                            >
+                              {selectedShippingMethod === option.id && (
+                                <View className="w-2 h-2 rounded-full bg-white m-0.5" />
+                              )}
+                            </View>
+                            <View className="flex-1">
+                              <Text className="text-sm font-inter-semibold text-gray-800">{providerName}</Text>
+                              {providerDescription && (
+                                <Text className="text-xs text-gray-600">{providerDescription}</Text>
+                              )}
+                              {option.estimated_days_min && option.estimated_days_max && (
+                                <Text className="text-xs text-gray-600">
+                                  Estimated delivery: {option.estimated_days_min}-{option.estimated_days_max} days
+                                </Text>
+                              )}
+                            </View>
                           </View>
-                          <View>
-                            <Text className="text-sm font-inter-semibold text-gray-800">{option.name}</Text>
-                            {option.estimated_days_min && option.estimated_days_max && (
-                              <Text className="text-xs text-gray-600">
-                                Estimated delivery: {option.estimated_days_min}-{option.estimated_days_max} days
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                        <Text className="text-sm font-inter-bold text-gray-800">
-                          {option.price === 0
-                            ? 'Free'
-                            : `£${option.price.toLocaleString('en-US', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}`}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <Text className="text-sm font-inter-bold text-gray-800 ml-2">
+                            {postagePrice !== null
+                              ? postagePrice === 0
+                                ? 'Free'
+                                : `£${formatPrice(postagePrice)}`
+                              : '£0.00'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 ) : (
                   <View className="p-4 border border-yellow-500/50 bg-yellow-500/10 rounded-lg">
@@ -1046,28 +1202,19 @@ export default function CheckoutScreen() {
               {/* Products List */}
               <View className="p-4">
                 {checkoutItems.map((item, index) => (
-                  <View key={item.product?.id || index} className="flex-row items-center justify-between py-2">
+                  <View key={item.product?.id || index} className="flex-row items-center justify-between gap-2 py-2">
                     <Text className="text-sm font-inter-semibold text-gray-800 flex-1">
                       {item.product?.product_name} x1
                     </Text>
                     <Text className="text-sm font-inter-semibold text-gray-800">
-                      £
-                      {item.product?.discounted_price !== null
-                        ? item.product?.discounted_price.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })
-                        : item.product?.starting_price.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                      £{formatPrice(item.product?.discounted_price || item.product?.starting_price)}
                     </Text>
                   </View>
                 ))}
               </View>
 
               {/* Separator */}
-              <View className="h-px bg-gray-200 mx-4" />
+              <View className="h-px bg-gray-200" />
 
               {/* Subtotal and Shipping */}
               <View className="p-4">
@@ -1075,54 +1222,83 @@ export default function CheckoutScreen() {
                   <Text className="text-sm font-inter-semibold text-gray-800">Subtotal</Text>
                   <Text className="text-sm font-inter-semibold text-gray-800">
                     £
-                    {checkoutItems
-                      .reduce((total, item) => {
-                        const price =
-                          item.product?.discounted_price !== null
-                            ? item.product?.discounted_price || 0
-                            : item.product?.starting_price || 0;
-                        return total + price;
-                      }, 0)
-                      .toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                  </Text>
-                </View>
-
-                <View className="flex-row items-center justify-between py-1">
-                  <Text className="text-sm font-inter-semibold text-gray-800">Shipping</Text>
-                  <Text className="text-sm font-inter-semibold text-gray-800">
-                    {shippingMethods.find((option) => option.id === selectedShippingMethod)?.price === 0
-                      ? 'Free'
-                      : `£${shippingMethods
-                          .find((option) => option.id === selectedShippingMethod)
-                          ?.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Separator */}
-              <View className="h-px bg-gray-200 mx-4" />
-
-              {/* Total */}
-              <View className="p-4">
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-base font-inter-bold text-gray-800">Total</Text>
-                  <Text className="text-base font-inter-bold text-gray-800">
-                    £
-                    {(
+                    {formatPrice(
                       checkoutItems.reduce((total, item) => {
                         const price =
                           item.product?.discounted_price !== null
                             ? item.product?.discounted_price || 0
                             : item.product?.starting_price || 0;
                         return total + price;
-                      }, 0) + (shippingMethods.find((option) => option.id === selectedShippingMethod)?.price || 0)
-                    ).toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                      }, 0)
+                    )}
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm font-inter-semibold text-gray-800">Shipping</Text>
+                  <Text className="text-sm font-inter-semibold text-gray-800">
+                    {(() => {
+                      const selectedOption = shippingMethods.find((option) => option.id === selectedShippingMethod);
+                      if (!selectedOption) return '£0.00';
+
+                      // Calculate total weight for checkout items
+                      const totalWeight = checkoutItems.reduce((weightSum, item) => {
+                        const weight = (item.product as unknown)?.weight ?? 0;
+                        return weightSum + (typeof weight === 'number' ? weight : 0);
+                      }, 0);
+
+                      // Get weight band
+                      const weightBand = getWeightBand(totalWeight, shippingBands);
+
+                      // Get postage price
+                      const postagePrice = getPostagePrice(selectedOption.provider_id, weightBand?.id || null);
+
+                      if (postagePrice === null) return '£0.00';
+                      if (postagePrice === 0) return 'Free';
+                      return `£${formatPrice(postagePrice)}`;
+                    })()}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Separator */}
+              <View className="h-px bg-gray-200" />
+
+              {/* Total */}
+              <View className="p-4">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-base font-inter-bold text-gray-800">Total</Text>
+                  <Text className="text-base font-inter-bold text-gray-800">
+                    {(() => {
+                      const subtotal = checkoutItems.reduce((total, item) => {
+                        const price =
+                          item.product?.discounted_price !== null
+                            ? item.product?.discounted_price || 0
+                            : item.product?.starting_price || 0;
+                        return total + price;
+                      }, 0);
+
+                      const selectedOption = shippingMethods.find((option) => option.id === selectedShippingMethod);
+                      let shippingPrice = 0;
+
+                      if (selectedOption) {
+                        // Calculate total weight for checkout items
+                        const totalWeight = checkoutItems.reduce((weightSum, item) => {
+                          const weight = (item.product as unknown)?.weight ?? 0;
+                          return weightSum + (typeof weight === 'number' ? weight : 0);
+                        }, 0);
+
+                        // Get weight band
+                        const weightBand = getWeightBand(totalWeight, shippingBands);
+
+                        // Get postage price
+                        const postagePrice = getPostagePrice(selectedOption.provider_id, weightBand?.id || null);
+                        shippingPrice = postagePrice !== null ? postagePrice : 0;
+                      }
+
+                      const total = subtotal + shippingPrice;
+                      return `£${formatPrice(total)}`;
+                    })()}
                   </Text>
                 </View>
               </View>
@@ -1130,20 +1306,22 @@ export default function CheckoutScreen() {
 
             <TouchableOpacity
               onPress={processCheckout}
-              disabled={checkoutLoading || !canProceedToCheckout()}
+              disabled={checkoutLoading || isGeneratingLabels || !canProceedToCheckout()}
               className={`rounded-2xl py-4 items-center ${
-                canProceedToCheckout() && !checkoutLoading ? 'bg-black' : 'bg-orange-500'
-              } ${checkoutLoading ? 'opacity-70' : ''}`}
+                canProceedToCheckout() && !checkoutLoading && !isGeneratingLabels ? 'bg-black' : 'bg-orange-500'
+              } ${checkoutLoading || isGeneratingLabels ? 'opacity-70' : ''}`}
             >
-              {checkoutLoading ? (
+              {checkoutLoading || isGeneratingLabels ? (
                 <View className="flex-row items-center">
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text className="text-white text-base font-inter-bold ml-2">Processing Order...</Text>
+                  <Text className="text-white text-base font-inter-bold ml-2">
+                    {isGeneratingLabels ? 'Generating Labels...' : 'Processing Order...'}
+                  </Text>
                 </View>
               ) : (
                 <>
                   <Text className="text-white text-base font-inter-bold">
-                    {canProceedToCheckout() ? 'Complete Order' : 'Complete Required Fields'}
+                    {canProceedToCheckout() ? 'Continue to Payment' : 'Complete Required Fields'}
                   </Text>
                   {!canProceedToCheckout() && (
                     <Text className="text-white text-xs font-inter-semibold mt-1 text-center">
@@ -1155,97 +1333,6 @@ export default function CheckoutScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
-
-        {/* Country Picker Modal */}
-        <Modal
-          visible={showCountryPicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowCountryPicker(false)}
-        >
-          <View className="flex-1 justify-end bg-black/50">
-            <View className="bg-white rounded-t-2xl max-h-96">
-              <View className="flex-row items-center justify-between p-4 border-b border-gray-200">
-                <Text className="text-lg font-inter-bold text-gray-800">Select Country</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowCountryPicker(false);
-                    setCountrySearch('');
-                  }}
-                >
-                  <Feather name="x" color="#666" size={24} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Search Input */}
-              <View className="px-4 py-3 border-b border-gray-200">
-                <View className="flex-row items-center px-3 rounded-lg bg-gray-100">
-                  <Feather name="search" color="#666" size={16} />
-                  <TextInput
-                    value={countrySearch}
-                    onChangeText={setCountrySearch}
-                    placeholder="Search countries..."
-                    className="flex-1 py-2 px-2 text-base font-inter"
-                    autoCapitalize="none"
-                  />
-                  {countrySearch.length > 0 && (
-                    <TouchableOpacity onPress={() => setCountrySearch('')}>
-                      <Feather name="x" color="#666" size={16} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              <ScrollView className="max-h-80">
-                {filteredCountries.length > 0 ? (
-                  filteredCountries.map((country, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      onPress={() => {
-                        updateShippingAddress('country', country.code);
-                        setShowCountryPicker(false);
-                        setCountrySearch('');
-                      }}
-                      className={`p-4 border-b border-gray-100 ${
-                        shippingInformation.country === country.code ? 'bg-blue-50' : 'bg-white'
-                      }`}
-                    >
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-1">
-                          <Text
-                            className={`text-base font-inter-semibold ${
-                              shippingInformation.country === country.code
-                                ? 'text-blue-600 font-inter-bold'
-                                : 'text-gray-800'
-                            }`}
-                          >
-                            {country.name}
-                          </Text>
-                          <Text
-                            className={`text-sm font-inter-semibold ${
-                              shippingInformation.country === country.code ? 'text-blue-500' : 'text-gray-500'
-                            }`}
-                          >
-                            {country.code}
-                          </Text>
-                        </View>
-                        {shippingInformation.country === country.code && (
-                          <Feather name="check" color="#007AFF" size={20} />
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <View className="p-8 items-center">
-                    <Feather name="search" color="#999" size={32} />
-                    <Text className="text-gray-500 font-inter-semibold mt-2">No countries found</Text>
-                    <Text className="text-gray-400 font-inter-semibold text-sm mt-1">Try a different search term</Text>
-                  </View>
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
